@@ -8,13 +8,18 @@
     "start": "next start",
     "lint": "next lint"
   },
-  "dependencies": {    
+  "dependencies": {
+    "@web3-onboard/core": "^2.24.0",
+    "@web3-onboard/injected-wallets": "^2.11.3",
+    "@web3-onboard/react": "^2.11.0",
     "antd": "^5.22.5",
+    "axios": "^1.8.4",
+    "bs58": "^6.0.0",
+    "ethers": "^5.7.2",
     "next": "12.3.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "@walletconnect/web3-provider": "^1.8.0",
-    "ethers": "^5.7.2",
+    "web3": "^4.16.0",
     "web3modal": "^1.9.12"
   },
   "devDependencies": {
