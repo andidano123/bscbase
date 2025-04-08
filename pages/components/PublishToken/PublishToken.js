@@ -436,12 +436,13 @@ const PublishToken = () => {
             const gas = await contractDeployer.estimateGas({
                 from: wallet.accounts[0].address,
             });
-            console.log('Estimated gas:', gas);
+            const gasPrice = await web3.eth.getGasPrice();
+            console.log('Estimated gas:', gas, gasPrice);
             try {
                 const tx = await contractDeployer.send({
                     from: wallet.accounts[0].address,
-                    gas: 100000,
-                    gasPrice: 10000000000,
+                    gas,
+                    gasPrice,
                 });
                 console.log('Contract deployed at address: ' + tx.options.address);
                 await axios.post("/api/insert", tokenInfo);
