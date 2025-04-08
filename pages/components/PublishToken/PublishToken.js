@@ -83,6 +83,12 @@ const PublishToken = () => {
         tokenInfo.pub_count = 1;
         tokenInfo.publish_addr = wallet.accounts[0].address;
         tokenInfo.tabs = "";
+        tokenInfo.is_freeze_auth = 0;
+        tokenInfo.is_mint_auth = 0;
+        tokenInfo.is_update_auth = 0;
+        tokenInfo.nameoc = tokenInfo.name;
+        tokenInfo.symboloc = tokenInfo.symbol;
+
         console.log("sinboss token info", tokenInfo);
         try {
 
