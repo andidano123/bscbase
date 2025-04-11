@@ -88,7 +88,9 @@ const PublishToken = () => {
         tokenInfo.is_update_auth = 0;
         tokenInfo.nameoc = tokenInfo.name;
         tokenInfo.symboloc = tokenInfo.symbol;
-
+        tokenInfo.description = "";
+        tokenInfo.picurl = "";
+        
         console.log("sinboss token info", tokenInfo);
         try {
 

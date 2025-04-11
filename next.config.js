@@ -55,7 +55,11 @@ const nextConfig = {
         source: '/price/v2',
         destination: 'https://api.jup.ag/price/v2',
         // destination: 'http://localhost/api/:path*',
-      }
+      },
+      {
+        source: '/ethscanapi',
+        destination: 'https://api.etherscan.io/v2/api',        
+      },
       
     ]
   }

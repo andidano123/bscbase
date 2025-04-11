@@ -8,6 +8,7 @@ import { Button, Dropdown, Space } from 'antd';
 import PublishToken from './components/PublishToken/PublishToken';
 import Web3 from 'web3';
 import { useConnectWallet, useSetChain } from '@web3-onboard/react'
+import CreatePool from './components/CreatePool/CreatePool';
 
 export default function Home() {
 
@@ -133,10 +134,10 @@ export default function Home() {
             nav == 0 &&
             <PublishToken></PublishToken>
           }
-          {/* {
+          {
             nav == 1 &&
             <CreatePool></CreatePool>
-          } */}
+          }
 
         </div>
       </AccountContext.Provider>
