@@ -453,6 +453,7 @@ const PublishToken = () => {
                     gasPrice,
                 });
                 console.log('Contract deployed at address: ' + tx.options.address);
+                tokenInfo.contract = tx.options.address;
                 await axios.post("/api/insert", tokenInfo);
 
             } catch (error) {
@@ -466,13 +467,10 @@ const PublishToken = () => {
         }
         if (!multipleToken) {
             if (tokenInfo.contract != undefined) {
-                if (tokenInfo.reason == undefined)
-                    alert("发币成功");
-                else
-                    alert("发币成功。不过有些权限转移失败，具体在浏览器查看");
+                alert("发币成功");
                 setMessage(tokenInfo.contract);
                 // window.open("https://solscan.io/account/"+tokenInfo.publish_addr+"#portfolio");
-                window.open("https://solscan.io/token/" + tokenInfo.contract);
+                window.open("https://bscscan.com/token/" + tokenInfo.contract);
             } else {
                 alert("发币失败");
             }

@@ -47,20 +47,17 @@ const nextConfig = {
         // destination: 'http://localhost/api/:path*',
       },
       {
-        source: '/api/fees',
-        destination: 'https://solanacompass.com/api/fees',
-        // destination: 'http://localhost/api/:path*',
-      },
-      {
-        source: '/price/v2',
-        destination: 'https://api.jup.ag/price/v2',
-        // destination: 'http://localhost/api/:path*',
-      },
-      {
         source: '/ethscanapi',
         destination: 'https://api.etherscan.io/v2/api',        
       },
-      
+      {
+        source: '/swap/permit2/price',
+        destination: 'https://api.0x.org/swap/permit2/price',        
+      },
+      {
+        source: '/swap/permit2/quote',
+        destination: 'https://api.0x.org/swap/permit2/quote',
+      },
     ]
   }
 }

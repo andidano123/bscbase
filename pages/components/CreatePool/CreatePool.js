@@ -7,7 +7,17 @@ const axios = require('axios');
 import BN from 'bn.js'
 import Decimal from 'decimal.js'
 import { useConnectWallet } from '@web3-onboard/react';
+import Web3 from 'web3';
+import { ChainId, CurrencyAmount, Percent, SWAP_ROUTER_02_ADDRESSES, Token, TradeType } from '@uniswap/sdk-core'
+import { computePoolAddress, FeeAmount, nearestUsableTick, NonfungiblePositionManager, Pool, Position, Route, SwapQuoter, SwapRouter, TickMath, Trade } from '@uniswap/v3-sdk'
+import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json'
+import JSBI from 'jsbi'
+const { abi: nfpmAbi } = require("@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json");
+import Quoter from '@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json'
+const qs = require('qs');
 
+import { ethers } from 'ethers';
+import { ERC20_ABI, MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_GAS, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, permit2Abi, POOL_FACTORY_CONTRACT_ADDRESS, QUOTER_CONTRACT_ADDRESS, SWAP_ROUTER_ADDRESS } from '../../../constant';
 // const URL = "http://localhost";
 const CreatePool = () => {
     const [selectedBase, setSelectedBase] = useState([]);
@@ -62,478 +72,13 @@ const CreatePool = () => {
         }
     }
 
-    const openPosition = async (e) => {
-        console.log("openPosition");
-        if (poolId == '') {
-            alert("先开池子");
-            return;
-        }
 
-        try {
-            const owner = Keypair.fromSecretKey(bs58.decode(feeSecret))
-            setMessage("开仓位中");
-            const raydium = await Raydium.load({
-                owner: new PublicKey(wallet.publicKey.toString()),
-                signAllTransactions: wallet.signAllTransactions,
-                connection,
-                cluster,
-                disableFeatureCheck: true,
-                disableLoadToken: true,
-                blockhashCommitment: 'finalized',
-                // urlConfigs: {
-                //   BASE_HOST: '<API_HOST>', // api url configs, currently api doesn't support devnet
-                // },
-            })
-            let poolInfo = null;
-            let poolKeys = null;
-            let tickCache = null;
-            let clmmPoolInfo = null;
-
-            // note: api doesn't support get devnet pool info, so in devnet else we go rpc method
-            // if you wish to get pool info from rpc, also can modify logic to go rpc method directly
-            try {
-                const data = await raydium.clmm.getPoolInfoFromRpc(poolId)
-                poolInfo = data.poolInfo
-                poolKeys = data.poolKeys
-                clmmPoolInfo = data.computePoolInfo
-                tickCache = data.tickData
-            } catch (e) {
-                console.log(e);
-                console.log("池子还没反应过来，等几秒后再来");
-                setTimeout(() => {
-                    openPosition();
-                }, 5000);
-                return;
-            }
-            console.log("poolInfo", poolInfo);
-            console.log("check", priceList[currentTempId] < 1, poolInfo.mintB.address == tokenData.mint, tokenData.mint);
-            // 价格大于1， mintA为基础币， 价格小于1， mintB为基础币
-            const txVersion1 = TxVersion.V0;
-            if (priceList[currentTempId] > 1) {
-                let price = 0;
-                if (poolInfo.mintA.address == tokenData.mint)
-                    price = Number(priceList[currentTempId].toFixed(9));
-                else
-                    price = Number((1.0 / Number(priceList[currentTempId])).toFixed(9));
-                console.log("price first case", price);
-                const inputAmount = Math.floor(tokenData.amount / (10 ** tokenData.decimals) - 1000000 / Number(priceList[currentTempId]));
-                // const inputAmount = 1000;
-                const [startPrice, endPrice] = [price, price];
-                const { tick: lowerTick } = TickUtils.getPriceAndTick({
-                    poolInfo,
-                    price: new Decimal(startPrice),
-                    baseIn: true,
-                })
-                const { tick: upperTick } = TickUtils.getPriceAndTick({
-                    poolInfo,
-                    price: new Decimal(endPrice),
-                    baseIn: true,
-                })
-                const epochInfo = await raydium.fetchEpochInfo();
-                lowerTick = lowerTick - 1;
-                upperTick = upperTick
-                const res = await PoolUtils.getLiquidityAmountOutFromAmountIn({
-                    poolInfo,
-                    slippage: 0,
-                    inputA: poolInfo.mintA.address == tokenData.mint,
-                    tickUpper: Math.max(lowerTick, upperTick),
-                    tickLower: Math.min(lowerTick, upperTick),
-                    amount: new BN(new Decimal(inputAmount || '0').mul(10 ** tokenData.decimals).toFixed(0)),
-                    add: true,
-                    amountHasFee: true,
-                    epochInfo: epochInfo,
-                })
-                const { execute, extInfo, transaction } = await raydium.clmm.openPositionFromBase({
-                    poolInfo,
-                    poolKeys,
-                    tickUpper: Math.max(lowerTick, upperTick),
-                    tickLower: Math.min(lowerTick, upperTick),
-                    base: poolInfo.mintA.address == tokenData.mint ? "MintA" : "MintB",
-                    ownerInfo: {
-                        useSOLBalance: true,
-                    },
-                    baseAmount: new BN(new Decimal(inputAmount || '0').mul(10 ** tokenData.decimals).toFixed(0)),
-                    otherAmountMax: poolInfo.mintA.address == tokenData.mint ? res.amountSlippageB.amount : res.amountSlippageA.amount,
-                    txVersion: txVersion1,
-                    // optional: set up priority fee here
-                    computeBudgetConfig: {
-                        units: 600000,
-                        microLamports: 100000,
-                    },
-                })
-                const request1 = {
-                    method: "getTipAccounts",
-                    params: [],
-                };
-                const result1 = await connection._rpcRequest(request1.method, request1.params);
-                const { blockhash, lastValidBlockHeight } = await umi.rpc.getLatestBlockhash({ commitment: "processed" });
-                const transaction1 = new Transaction({
-                    recentBlockhash: blockhash,
-                    feePayer: owner.publicKey,
-                });
-                transaction1 = transaction1.add(
-                    SystemProgram.transfer({
-                        fromPubkey: owner.publicKey,
-                        toPubkey: new PublicKey(result1.result[1]),
-                        lamports: 0.0001 * LAMPORTS_PER_SOL, // 转账 0.1 SOL
-                    })
-                );
-                transaction1.sign(owner);
-                // const sss = await wallet.signTransaction(transaction1);
-                // const serializedTransaction = sss.serialize({ verifySignatures: false });
-                const serializedTransaction = transaction1.serialize();
-                // const base58EncodedTransaction = bs58.encode(serializedTransaction);
-                const params = [];
-                params.push(serializedTransaction);
-
-                const ttt = await wallet.signTransaction(transaction);
-                const serializedTransaction1 = ttt.serialize({ verifySignatures: false });
-                params.push(serializedTransaction1);
-                const bundlePayload = [];
-                for (let i = 0; i < params.length; i++)
-                    bundlePayload.push(Buffer.from(params[i]).toString('base64'));
-                const request2 = {
-                    method: "simulateBundle",
-                    params: [{
-                        encodedTransactions: bundlePayload
-                    }]
-                };
-                const result2 = await connection._rpcRequest(request2.method, request2.params);
-                console.log("result", result2);
-                if (result2.result.value.summary == "succeeded") {
-
-                } else {
-                    setMessage("开仓位失败，请稍后再试");
-                    console.log("sinboss", "交易失败" + JSON.stringify(result2));
-                    setWorking(false);
-                    doNext();
-                    return;
-                }
-                const params3 = [];
-                for (let i = 0; i < params.length; i++)
-                    params3.push(bs58.encode(params[i]));
-                const request3 = {
-                    method: "sendBundle",
-                    params: [
-                        params3
-                    ],
-                };
-                const result3 = await connection._rpcRequest(request3.method, request3.params);
-                console.log("result3", result3);
-                setMessage("开仓位成功");
-                setWorking(false);
-                doNext();
-            } else {
-                // 价格小于1
-                console.log("second case");
-                let price = 0;
-                const txVersion1 = TxVersion.V0;
-                if (poolInfo.mintA.address == tokenData.mint)
-                    price = Number(priceList[currentTempId].toFixed(9));
-                else
-                    price = Number((1.0 / Number(priceList[currentTempId])).toFixed(9));
-                console.log("price second case", price);
-                // const price = Number(tokenData.price.toFixed(9));
-                const inputAmount = 50;
-                const [startPrice, endPrice] = [price, price];
-                const { tick: lowerTick } = TickUtils.getPriceAndTick({
-                    poolInfo,
-                    price: new Decimal(startPrice),
-                    baseIn: true,
-                })
-
-                const { tick: upperTick } = TickUtils.getPriceAndTick({
-                    poolInfo,
-                    price: new Decimal(endPrice),
-                    baseIn: true,
-                })
-
-                const epochInfo = await raydium.fetchEpochInfo();
-                lowerTick = lowerTick - 1;
-                upperTick = upperTick
-                const res = await PoolUtils.getLiquidityAmountOutFromAmountIn({
-                    poolInfo,
-                    slippage: 0,
-                    inputA: poolInfo.mintA.address == tokenData.mint,
-                    tickUpper: Math.max(lowerTick, upperTick),
-                    tickLower: Math.min(lowerTick, upperTick),
-                    amount: new BN(new Decimal(inputAmount || '0').mul(10 ** quotoTokenData.decimals).toFixed(0)),
-                    add: true,
-                    amountHasFee: true,
-                    epochInfo: epochInfo,
-                })
-                const params = [];
-                const { execute, extInfo, transaction } = await raydium.clmm.openPositionFromBase({
-                    poolInfo,
-                    poolKeys,
-                    tickUpper: Math.max(lowerTick, upperTick),
-                    tickLower: Math.min(lowerTick, upperTick),
-                    base: poolInfo.mintA.address == tokenData.mint ? "MintB" : "MintA",
-                    ownerInfo: {
-                        useSOLBalance: true,
-                    },
-                    baseAmount: new BN(new Decimal(inputAmount || '0').mul(10 ** quotoTokenData.decimals).toFixed(0)),
-                    otherAmountMax: res.amountSlippageA.amount,
-                    txVersion: txVersion1,
-                    computeBudgetConfig: {
-                        units: 600000,
-                        microLamports: 100000,
-                    },
-                })
-                const request1 = {
-                    method: "getTipAccounts",
-                    params: [],
-                };
-                const result1 = await connection._rpcRequest(request1.method, request1.params);
-                const { blockhash, lastValidBlockHeight } = await umi.rpc.getLatestBlockhash({ commitment: "processed" });
-                const transaction1 = new Transaction({
-                    recentBlockhash: blockhash,
-                    feePayer: owner.publicKey,
-                });
-                transaction1 = transaction1.add(
-                    SystemProgram.transfer({
-                        fromPubkey: new PublicKey(owner.publicKey.toString()),
-                        toPubkey: new PublicKey(result1.result[1]),
-                        lamports: 0.0001 * LAMPORTS_PER_SOL, // 转账 0.1 SOL
-                    })
-                );
-                console.log("owner", owner.publicKey.toString());
-                transaction1.sign(owner);
-                // const sss = await wallet.signTransaction(transaction1);
-                // const serializedTransaction = sss.serialize({ verifySignatures: false });
-                const serializedTransaction = transaction1.serialize();
-                params.push(serializedTransaction);
-
-                const ttt = await wallet.signTransaction(transaction);
-                const serializedTransaction1 = ttt.serialize({ verifySignatures: false });
-                params.push(serializedTransaction1);
-
-                const bundlePayload = [];
-                for (let i = 0; i < params.length; i++)
-                    bundlePayload.push(Buffer.from(params[i]).toString('base64'));
-                const request2 = {
-                    method: "simulateBundle",
-                    params: [{
-                        encodedTransactions: bundlePayload
-                    }]
-                };
-                const result2 = await connection._rpcRequest(request2.method, request2.params);
-                console.log("result", result2);
-                if (result2.result.value.summary == "succeeded") {
-
-                } else {
-                    alert("交易失败" + JSON.stringify(result2));
-                    console.log("sinboss", "交易失败" + JSON.stringify(result2));
-                    return;
-                }
-                const params3 = [];
-                for (let i = 0; i < params.length; i++)
-                    params3.push(bs58.encode(params[i]));
-                const request3 = {
-                    method: "sendBundle",
-                    params: [
-                        params3
-                    ],
-                };
-                const result3 = await connection._rpcRequest(request3.method, request3.params);
-                console.log("result3", result3);
-                // setMessage("开仓位成功");
-                // setWorking(false);
-                // doNext();
-                setTimeout(() => {
-                    doSwap();
-                }, 5000);
-            }
-
-        } catch (e) {
-            console.log(e);
-            setMessage("开仓位失败，请稍后再试");
-            setWorking(false);
-            doNext();
-        }
-    }
     const doSwap = async (e) => {
         try {
             setMessage("兑换中");
-            const owner = Keypair.fromSecretKey(bs58.decode(feeSecret))
-            const txVersion1 = TxVersion.V0;
-            const raydium = await Raydium.load({
-                owner: new PublicKey(wallet.publicKey.toString()),
-                signAllTransactions: wallet.signAllTransactions,
-                connection,
-                cluster,
-                disableFeatureCheck: true,
-                disableLoadToken: true,
-                blockhashCommitment: 'finalized',
-                // urlConfigs: {
-                //   BASE_HOST: '<API_HOST>', // api url configs, currently api doesn't support devnet
-                // },
-            })
-            let poolInfo = null;
-            let poolKeys = null;
-            let clmmPoolInfo = null;
-            let tickCache = null;
 
-            const outputMint = new PublicKey(quotoTokenData.mint);
-            let amountOut = new BN(50).mul(new BN(10 ** quotoTokenData.decimals)).sub(new BN(1));
-            const data = await raydium.clmm.getPoolInfoFromRpc(poolId)
-            poolInfo = data.poolInfo
-            poolKeys = data.poolKeys
-            clmmPoolInfo = data.computePoolInfo
-            tickCache = data.tickData
-            if (Object.keys(tickCache).length === 0) {
-                console.log("sinboss", "池子同步慢");
-                setTimeout(() => {
-                    doSwap();
-                }, 5000);
-                return;
-            }
-            console.log("tickCache", tickCache);
-            if (outputMint.toBase58() !== poolInfo.mintA.address && outputMint.toBase58() !== poolInfo.mintB.address)
-                throw new Error('input mint does not match pool')
 
-            const { remainingAccounts, ...res } = await PoolUtils.computeAmountIn({
-                poolInfo: clmmPoolInfo,
-                tickArrayCache: tickCache[poolId],
-                amountOut,
-                baseMint: outputMint,
-                slippage: 0.01,
-                epochInfo: await raydium.fetchEpochInfo(),
-            })
 
-            const [mintIn, mintOut] =
-                outputMint.toBase58() === poolInfo.mintB.address
-                    ? [poolInfo.mintA, poolInfo.mintB]
-                    : [poolInfo.mintB, poolInfo.mintA]
-
-            console.log({
-                amountIn: `${new Decimal(res.amountIn.amount.toString()).div(10 ** mintIn.decimals).toString()} ${mintIn.symbol}`,
-                maxAmountIn: `${new Decimal(res.maxAmountIn.amount.toString()).div(10 ** mintIn.decimals).toString()} ${mintIn.symbol
-                    }`,
-                realAmountOut: `${new Decimal(res.realAmountOut.amount.toString()).div(10 ** mintOut.decimals).toString()} ${mintOut.symbol
-                    }`,
-            })
-
-            const { execute, transaction } = await raydium.clmm.swapBaseOut({
-                poolInfo,
-                poolKeys,
-                outputMint,
-                amountInMax: res.maxAmountIn.amount,
-                amountOut: res.realAmountOut.amount,
-                observationId: clmmPoolInfo.observationId,
-                ownerInfo: {
-                    useSOLBalance: true, // if wish to use existed wsol token account, pass false
-                },
-                remainingAccounts,
-                txVersion: txVersion1,
-
-                // optional: set up priority fee here
-                computeBudgetConfig: {
-                    units: 9000000,
-                    microLamports: 1000000,
-                },
-            })
-
-            const params = [];
-            const ttt = await wallet.signTransaction(transaction);
-            const serializedTransaction1 = ttt.serialize({ verifySignatures: false });
-            params.push(serializedTransaction1);
-
-            // 添加流动池
-            {
-                let price = Number(priceList[currentTempId].toFixed(9));
-                console.log("add liquidity");
-                const inputAmount = Math.floor(tokenData.amount / (10 ** tokenData.decimals) - 1000000 / price);
-                const allPosition = await raydium.clmm.getOwnerPositionInfo({ programId: poolInfo.programId })
-                const position = allPosition.find((p) => p.poolId.toBase58() === poolInfo.id)
-                const slippage = 0.05
-                const res = await PoolUtils.getLiquidityAmountOutFromAmountIn({
-                    poolInfo,
-                    slippage: 0,
-                    inputA: poolInfo.mintA.address == tokenData.mint,
-                    tickUpper: Math.max(position.tickLower, position.tickUpper),
-                    tickLower: Math.min(position.tickLower, position.tickUpper),
-                    amount: new BN(new Decimal(inputAmount || '0').mul(10 ** tokenData.decimals).toFixed(0)),
-                    add: true,
-                    amountHasFee: true,
-                    epochInfo: await raydium.fetchEpochInfo(),
-                })
-                console.log("poolInfo", poolInfo);
-                console.log("res", res, inputAmount);
-                const { execute, transaction } = await raydium.clmm.increasePositionFromBase({
-                    poolInfo,
-                    ownerPosition: position,
-                    ownerInfo: {
-                        useSOLBalance: true,
-                    },
-                    base: poolInfo.mintA.address == tokenData.mint ? "MintA" : "MintB",
-                    baseAmount: new BN(new Decimal(inputAmount || '0').mul(10 ** tokenData.decimals).toFixed(0)),
-                    otherAmountMax: new BN(1),
-                    associatedOnly: false,
-                    checkCreateATAOwner: true,
-                    txVersion: txVersion1,
-                    computeBudgetConfig: {
-                        units: 9000000,
-                        microLamports: 1000000,
-                    },
-                })
-
-                const ttt = await wallet.signTransaction(transaction);
-                const serializedTransaction1 = ttt.serialize({ verifySignatures: false });
-                params.push(serializedTransaction1);
-            }
-            const request1 = {
-                method: "getTipAccounts",
-                params: [],
-            };
-            const result1 = await connection._rpcRequest(request1.method, request1.params);
-            const { blockhash, lastValidBlockHeight } = await umi.rpc.getLatestBlockhash({ commitment: "processed" });
-            const transaction1 = new Transaction({
-                recentBlockhash: blockhash,
-                feePayer: owner.publicKey,
-            });
-            transaction1 = transaction1.add(
-                SystemProgram.transfer({
-                    fromPubkey: owner.publicKey,
-                    toPubkey: new PublicKey(result1.result[1]),
-                    lamports: 0.0001 * LAMPORTS_PER_SOL, // 转账 0.1 SOL
-                })
-            );
-            transaction1.sign(owner);
-            // const sss = await wallet.signTransaction(transaction1);
-            // const serializedTransaction = sss.serialize({ verifySignatures: false });
-            const serializedTransaction = transaction1.serialize();
-            params.push(serializedTransaction);
-
-            const bundlePayload = [];
-            for (let i = 0; i < params.length; i++)
-                bundlePayload.push(Buffer.from(params[i]).toString('base64'));
-            const request2 = {
-                method: "simulateBundle",
-                params: [{
-                    encodedTransactions: bundlePayload
-                }]
-            };
-            const result2 = await connection._rpcRequest(request2.method, request2.params);
-            console.log("result", result2);
-            if (result2.result.value.summary == "succeeded") {
-
-            } else {
-                alert("交易失败" + JSON.stringify(result2));
-                console.log("sinboss", "交易失败" + JSON.stringify(result2));
-                return;
-            }
-            const params3 = [];
-            for (let i = 0; i < params.length; i++)
-                params3.push(bs58.encode(params[i]));
-            const request3 = {
-                method: "sendBundle",
-                params: [
-                    params3
-                ],
-            };
-            const result3 = await connection._rpcRequest(request3.method, request3.params);
-            console.log("result3", result3);
             setMessage("收尾成功");
             setWorking(false);
             doNext();
@@ -545,6 +90,42 @@ const CreatePool = () => {
             doNext();
         }
     }
+    // 初始价格（必须以 sqrtPriceX96 格式传入）
+    function encodeSqrtPriceX96(amount1, amount0) {
+        const ratio = amount1 / amount0;
+        const sqrt = Math.sqrt(ratio);
+        const sqrtPriceX96 = Math.floor(sqrt * Math.pow(2, 96));
+        console.log("sqrtPriceX96", new Decimal(sqrtPriceX96).toHex());
+        return new Decimal(sqrtPriceX96).toHex();
+    }
+    async function getPoolInfo() {
+        const poolFee = FeeAmount.LOWEST;
+        const web3 = new Web3(wallet.provider);
+        const currentPoolAddress = computePoolAddress({
+            factoryAddress: POOL_FACTORY_CONTRACT_ADDRESS,
+            tokenA: new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals)),
+            tokenB: new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals)),
+            fee: poolFee,
+            chainId: ChainId.BNB
+        })
+        console.log("currentPoolAddress", currentPoolAddress);
+        const poolContract = new web3.eth.Contract(IUniswapV3PoolABI.abi, currentPoolAddress);
+
+        const [fee, liquidity, slot0] =
+            await Promise.all([
+                poolContract.methods.fee().call(),
+                poolContract.methods.liquidity().call(),
+                poolContract.methods.slot0().call(),
+            ])
+        console.log("slot0", slot0);
+        return {
+            fee,
+            liquidity,
+            sqrtPriceX96: slot0[0],
+            tick: slot0[1],
+        }
+    }
+
     const onSubmit = async (e) => {
         console.log("tokenData", tokenData);
         if (tokenData?.mint && quotoTokenData?.mint) {
@@ -557,91 +138,314 @@ const CreatePool = () => {
             setWorking(true);
             try {
                 setMessage("开池子中");
+                let address = wallet.accounts[0].address;
+                const web3 = new Web3(wallet.provider);
+                const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 
-                const raydium = await Raydium.load({
-                    owner: new PublicKey(wallet.publicKey.toString()),
-                    signAllTransactions: wallet.signAllTransactions,
-                    connection,
-                    cluster,
-                    disableFeatureCheck: true,
-                    disableLoadToken: true,
-                    blockhashCommitment: 'finalized',
+                // 授权合约可以转移代币
+                const token0Contract = new web3.eth.Contract(ERC20_ABI, tokenData.mint);
+                const token1Contract = new web3.eth.Contract(ERC20_ABI, quotoTokenData.mint);
+                const allowNum0 = await token0Contract.methods.allowance(address, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
+                if (allowNum0 < 10 ** 30)
+                    await token0Contract.methods.approve(NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
+                const allowNum1 = await token1Contract.methods.allowance(address, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
+                if (allowNum1 < 10 ** 30)
+                    await token1Contract.methods.approve(NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
+
+                const token0 = new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals));
+                const token1 = new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals));
+                const poolFee = FeeAmount.LOWEST;
+                const currentPoolAddress = computePoolAddress({
+                    factoryAddress: POOL_FACTORY_CONTRACT_ADDRESS,
+                    tokenA: token0,
+                    tokenB: token1,
+                    fee: poolFee,
+                    chainId: ChainId.BNB
                 })
+                console.log("currentPoolAddress", currentPoolAddress);
+                const poolContract = new web3.eth.Contract(IUniswapV3PoolABI.abi, currentPoolAddress);
+                const code = await web3.eth.getCode(currentPoolAddress);
+                if (code && code !== '0x') {
 
-                const mint1 = await raydium.token.getTokenInfo(tokenData.mint)
-                const mint2 = await raydium.token.getTokenInfo(quotoTokenData.mint)
+                } else {
+                    // 创建pool
+                    const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
+                    const sqrtPriceX96 = encodeSqrtPriceX96(priceList[currentTempId] * (10 ** quotoTokenData.decimals), 10 ** tokenData.decimals);
 
-                const clmmConfigs = await raydium.api.getClmmConfigs()
-                // const clmmConfigs = devConfigs // devnet configs
-                console.log("mint1, mint2", mint1, mint2);
-                const { execute, extInfo, transaction } = await raydium.clmm.createPool({
-                    programId: CLMM_PROGRAM_ID,
-                    // programId: DEVNET_PROGRAM_ID.CLMM,
-                    mint1,
-                    mint2,
-                    ammConfig: { ...clmmConfigs[0], id: new PublicKey(clmmConfigs[0].id), fundOwner: '', description: '' },
-                    initialPrice: new Decimal(1),
-                    startTime: new BN(0),
-                    txVersion,
-                    // optional: set up priority fee here
-                    computeBudgetConfig: {
-                        units: 600000,
-                        microLamports: 46591500,
-                    },
-                })
-                console.log("transaction", transaction);
-                const request1 = {
-                    method: "getTipAccounts",
-                    params: [],
-                };
-                const result1 = await connection._rpcRequest(request1.method, request1.params);
-                const { blockhash, lastValidBlockHeight } = await umi.rpc.getLatestBlockhash({ commitment: "processed" });
-                const transaction1 = new Transaction({
-                    recentBlockhash: blockhash,
-                    feePayer: wallet.publicKey,
+                    const tx = nfpm.methods.createAndInitializePoolIfNecessary(tokenData.mint, quotoTokenData.mint, 100, web3.utils.hexToNumber(sqrtPriceX96));
+                    const gas = await tx.estimateGas({ from: address });
+                    const gasPrice = await web3.eth.getGasPrice();
+                    await tx.send({
+                        from: address,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        gas,
+                        gasPrice,
+                    });
+                }
+
+                const [liquidity, slot0] =
+                    await Promise.all([
+                        poolContract.methods.liquidity().call(),
+                        poolContract.methods.slot0().call(),
+                    ])
+
+                console.log(TickMath.MIN_TICK, TickMath.MAX_TICK, slot0);
+                const configuredPool = new Pool(
+                    token0,
+                    token1,
+                    poolFee,
+                    slot0.sqrtPriceX96.toString(),
+                    liquidity.toString(),
+                    Number(slot0.tick)
+                )
+                console.log("configuredPool ", configuredPool);
+                const gasPrice = await web3.eth.getGasPrice();
+
+                // get calldata for minting a position
+                // {
+
+                //     // 设置流动性数量
+                //     const amount0 = tokenData.amount;
+                //     const amount1 = 50 * (10 ** quotoTokenData.decimals);
+
+                //     const position = Position.fromAmounts({
+                //         pool: configuredPool,
+                //         tickLower:
+                //             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
+                //             configuredPool.tickSpacing * 2,
+                //         tickUpper:
+                //             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) +
+                //             configuredPool.tickSpacing * 2,
+                //         amount0: amount0,
+                //         amount1: amount1,
+                //         useFullPrecision: true,
+                //     })
+                //     const mintOptions = {
+                //         recipient: address,
+                //         deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+                //         slippageTolerance: new Percent(50, 10_000),
+                //     }
+
+                //     const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                //         position,
+                //         mintOptions
+                //     )
+                //     console.log("position", position);
+                //     console.log("getting amount", position.amount0.toExact(), position.amount1.toExact());
+                //     console.log("getting amount1", position.mintAmounts.amount0.toString(), position.mintAmounts.amount1.toString());
+                //     const transaction = {
+                //         data: calldata,
+                //         to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                //         value: value,
+                //         from: address,
+                //         gas: 10000000,
+                //         gasPrice,
+                //     }
+                //     const txRes = await web3.eth.sendTransaction(transaction);
+                // }
+
+                const provider = new ethers.providers.Web3Provider(web3.currentProvider);
+
+                // swap
+                // const poolInfo = await getPoolInfo()
+                // const pool = new Pool(
+                //     token0,
+                //     token1,
+                //     poolFee,
+                //     poolInfo.sqrtPriceX96.toString(),
+                //     poolInfo.liquidity.toString(),
+                //     Number(poolInfo.tick)
+                // )
+
+                // const swapRoute = new Route(
+                //     [pool],
+                //     token0,
+                //     token1
+                // )
+
+                // const outUSDT = "8";
+                // const inputAmount = (8 / priceList[currentTempId]).toFixed(2);
+
+                // const { calldata } = await SwapQuoter.quoteCallParameters(
+                //     swapRoute,
+                //     CurrencyAmount.fromRawAmount(
+                //         token0,
+                //         ethers.utils.parseUnits(inputAmount, tokenData.decimals)
+                //         // ethers.utils.parseUnits(outUSDT, quotoTokenData.decimals)
+                //     ),
+                //     TradeType.EXACT_INPUT,
+                //     {
+                //         useQuoterV2: true,
+                //     }
+                // );
+                // const quoteCallReturnData = await provider.call({
+                //     to: QUOTER_CONTRACT_ADDRESS,
+                //     data: calldata,
+                // })
+                // const amountOut = ethers.utils.defaultAbiCoder.decode(['uint256'], quoteCallReturnData)
+                // console.log("amountOut", amountOut.toString());
+
+                // const uncheckedTrade = Trade.createUncheckedTrade({
+                //     route: swapRoute,
+                //     inputAmount: CurrencyAmount.fromRawAmount(
+                //         token0,
+                //         ethers.utils.parseUnits(inputAmount, tokenData.decimals)
+                //     ),
+                //     outputAmount: CurrencyAmount.fromRawAmount(
+                //         token1,
+                //         // ethers.utils.parseUnits(outUSDT, quotoTokenData.decimals)
+                //         JSBI.BigInt(amountOut)
+                //     ),
+                //     tradeType: TradeType.EXACT_INPUT,
+                // })
+                // console.log("uncheckedTrade", uncheckedTrade);
+                // console.log(uncheckedTrade.inputAmount.toExact(), uncheckedTrade.outputAmount.toExact());
+                // const options = {
+                //     slippageTolerance: new Percent(50, 10_000), // 50 bips, or 0.50%
+                //     deadline: Math.floor(Date.now() / 1000) + 60 * 20, // 20 minutes from the current Unix time
+                //     recipient: address,
+                // }
+                // const methodParameters = SwapRouter.swapCallParameters([uncheckedTrade], options)
+
+                // // approve to swap route
+                // const allowNum3 = await token0Contract.methods.allowance(address, SWAP_ROUTER_ADDRESS).call();
+                // if (allowNum3 < 10 ** 30)
+                //     await token0Contract.methods.approve(SWAP_ROUTER_ADDRESS, MAX_UINT256).send({ from: address });
+                // const allowNum4 = await token1Contract.methods.allowance(address, SWAP_ROUTER_ADDRESS).call();
+                // if (allowNum4 < 10 ** 30)
+                //     await token1Contract.methods.approve(SWAP_ROUTER_ADDRESS, MAX_UINT256).send({ from: address });
+                // console.log("SWAP_ROUTER_02_ADDRESSES(ChainId.BNB),", SWAP_ROUTER_02_ADDRESSES(ChainId.BNB));
+                // const transaction = {
+                //     data: methodParameters.calldata,
+                //     to: SWAP_ROUTER_ADDRESS,
+                //     value: methodParameters.value,
+                //     from: address,
+                //     gas: 10000000,
+                //     gasPrice,
+                // }
+
+                // const txRes = await web3.eth.sendTransaction(transaction);
+
+                // 0x.org swap api
+                const priceParams = new URLSearchParams({
+                    chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
+                    sellToken: tokenData.mint, //ETH
+                    buyToken: quotoTokenData.mint, //DAI
+                    sellAmount: 1 * (10 ** tokenData.decimals), // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
+                    taker: address, //Address that will make the trade
                 });
-                // transaction.sign([umi]);
-                transaction1 = transaction1.add(transaction);
-                transaction1 = transaction1.add(
-                    SystemProgram.transfer({
-                        fromPubkey: new PublicKey(wallet.publicKey.toString()),
-                        toPubkey: new PublicKey(result1.result[0]),
-                        lamports: 0.0001 * LAMPORTS_PER_SOL, // 转账 0.1 SOL
-                    })
-                );
-                const sss = await wallet.signTransaction(transaction1);
-                console.log("sss", sss);
-                console.log("extInfo", extInfo);
-                poolId = extInfo.address.id;
-                console.log("sinboss pool id", poolId);
-                setPoolId(poolId);
 
-                const serializedTransaction = sss.serialize({ verifySignatures: false });
-                const base58EncodedTransaction = bs58.encode(serializedTransaction);
-                const request = {
-                    method: "sendTransaction",
-                    params: [
-                        base58EncodedTransaction
-                    ],
+                const headers = {
+                    '0x-api-key': '271880a4-ffca-4c12-a78a-83da2b0db5b0', // Get your live API key from the 0x Dashboard (https://dashboard.0x.org/apps)
+                    '0x-version': 'v2',
                 };
-                const result = await connection._rpcRequest(request.method, request.params);
-                console.log("result", result);
-                openPosition();
-            } catch (e) {
-                console.log(e);
-                setMessage("开池子失败");
-                setWorking(false);
-                doNext();
+
+                const priceResponse = await fetch('/swap/permit2/price?' + priceParams.toString(), { headers });
+
+                console.log(await priceResponse.json());
+                const res = priceResponse.json();
+
+                // 要进行授权
+                if (res.issues.allowance != null) {
+                    const Permit2 = new web3.eth.Contract(permit2Abi, res.issues.allowance.spender);
+                    const allowNum3 = await token0Contract.methods.allowance(address, res.issues.allowance.spender).call();
+                    if (allowNum3 < 10 ** 30)
+                        await token0Contract.methods.approve(res.issues.allowance.spender, MAX_UINT256).send({ from: address });
+                }
+
+                // const params = {
+                //     sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', //WETH
+                //     buyToken: '0x6b175474e89094c44da98b954eedeac495271d0f', //DAI
+                //     sellAmount: '100000000000000000000', // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
+                //     taker: address, //Address that will make the trade
+                //     chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
+                // };
+                const response = await fetch(
+                    `/swap/permit2/quote?` + priceParams.toString(), { headers }
+                );
+
+                console.log(await response.json());
+
+                // let signature = await signTypedData(quote.permit2.eip712);
+
+
+                // 添加流动池
+                // const amount0Increased = fromReadableAmount(
+                //     50000,
+                //     token0.decimals
+                // )
+                // const amount1Increase = fromReadableAmount(
+                //     50000,
+                //     token1.decimals
+                // )
+
+                // const positionToIncreaseBy = Position.fromAmounts({
+                //     pool,
+                //     tickLower:
+                //         nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
+                //         pool.tickSpacing * 2,
+                //     tickUpper:
+                //         nearestUsableTick(pool.tickCurrent, pool.tickSpacing) +
+                //         pool.tickSpacing * 2,
+                //     amount0: amount0Increased,
+                //     amount1: amount1Increase,
+                //     useFullPrecision: true,
+                // })
+                // console.log("positionToIncreaseBy", positionToIncreaseBy, positionToIncreaseBy.amount0.toExact(), positionToIncreaseBy.amount1.toExact(), positionToIncreaseBy.mintAmounts.amount0.toString()
+                //     ,positionToIncreaseBy.mintAmounts.amount1.toString());
+                // const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
+
+                // // Get number of positions
+                // const balance = await nfpm.methods.balanceOf(address).call();
+
+                // // Get all positions
+                // const tokenIds = []
+                // for (let i = 0; i < balance; i++) {
+                //     const tokenOfOwnerByIndex =
+                //         await nfpm.methods.tokenOfOwnerByIndex(address, i).call();
+                //     tokenIds.push(tokenOfOwnerByIndex)
+                // }
+                // console.log("tokenIds", tokenIds);
+                // const addLiquidityOptions = {
+                //     deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+                //     slippageTolerance: new Percent(50, 10_000),
+                //     tokenId: Number(tokenIds[tokenIds.length - 1]),
+                // }
+                // const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                //     positionToIncreaseBy,
+                //     addLiquidityOptions
+                // )
+                // const transaction = {
+                //     data: calldata,
+                //     to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                //     value: value,
+                //     from: address,
+                //     gas: 10000000,
+                //     gasPrice,
+                // }
+                // const txRes = await web3.eth.sendTransaction(transaction);
+
+
+                console.log("交易成功，交易哈希：", txRes);
+            } catch (err) {
+                console.error("交易失败：", err);
             }
+
         }
         else {
             alert("请选择代币");
         }
     };
+    function fromReadableAmount(
+        amount,
+        decimals
+    ) {
+        return ethers.utils.parseUnits(amount.toString(), decimals)
+    }
     const handleChangeTemplate = async (e) => {
         console.log("handleChangeTemplate", e);
-        try {            
-            const token = { ... tokenList[e]};
+        try {
+            const token = { ...tokenList[e] };
             tokenData = token;
             setTokenData(token);
         } catch (e) {
@@ -651,7 +455,7 @@ const CreatePool = () => {
     }
     const handleChangeTemplate1 = async (e) => {
         try {
-            const token = { ... tokenList[e]};
+            const token = { ...tokenList[e] };
             setQuotoTokenData(token);
         } catch (e) {
             console.log(e);
@@ -661,7 +465,7 @@ const CreatePool = () => {
 
     useEffect(() => {
         for (let i = 0; i < tokenList.length; i++) {
-            if (tokenList[i].mint == "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d") {
+            if (tokenList[i].mint.toLowerCase() == "0x55d398326f99059fF775485246999027B3197955".toLowerCase()) {
                 handleChangeTemplate1(i);
                 return;
             }
@@ -672,15 +476,15 @@ const CreatePool = () => {
         setTokenWorking(true);
         if (wallet == null) return;
         const tempList = [];
-        let cnt = 0;        
-        await axios.get('/ethscanapi?chainid=56&module=account&action=addresstokenbalance&address='+wallet.accounts[0].address+'&page=1&offset=100&apikey=PBW3EJKK38ERG55VYRX43777BRHAJYHC81',
+        let cnt = 0;
+        await axios.get('/ethscanapi?chainid=56&module=account&action=addresstokenbalance&address=' + wallet.accounts[0].address + '&page=1&offset=100&apikey=PBW3EJKK38ERG55VYRX43777BRHAJYHC81',
             {}).then((response) => {
-                console.log(response.data);                
+                console.log(response.data);
                 response.data.result.forEach((accountInfo) => {
                     tempList.push({
                         mint: accountInfo.TokenAddress,
                         amount: accountInfo.TokenQuantity,
-                        id: cnt++,                        
+                        id: cnt++,
                         name: accountInfo.TokenName,
                         symbol: accountInfo.TokenSymbol,
                         decimals: accountInfo.TokenDivisor,
@@ -689,7 +493,7 @@ const CreatePool = () => {
             }).catch((e) => {
                 console.log(e);
             });
-        
+
         // tempList.sort((a, b) => {
         //     return a.mint > b.mint;
         // })
@@ -698,26 +502,27 @@ const CreatePool = () => {
         for (let i = 0; i < tempList.length; i++) {
             try {
                 // tempList[i].supp = asset.mint.supply.toString();
-                tempList[i].price0 = 0;                
+                tempList[i].price0 = 0;
                 let token_id = 0;
                 for (let kk = 0; kk < templateList.length; kk++) {
                     if (templateList[kk].token_id != undefined && templateList[kk].symbol == tempList[i].symbol) {
                         token_id = templateList[kk].token_id;
                     }
                 }
-                if (token_id > 0) {
-                    await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
-                        headers: {
-                            'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
-                        },
-                    }).then((response) => {
-                        console.log(response.data);
-                        tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
-                    }).catch((e) => {
+                console.log("token_id", token_id);
+                // if (token_id > 0) {
+                //     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
+                //         headers: {
+                //             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
+                //         },
+                //     }).then((response) => {
+                //         console.log(response.data);
+                //         tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
+                //     }).catch((e) => {
 
-                    });
-                    await sleep(3000);
-                }
+                //     });
+                //     await sleep(3000);
+                // }
                 tempPriceList.push(Number(tempList[i].price0));
             } catch (e) {
                 console.log("eee", e);
@@ -826,7 +631,7 @@ const CreatePool = () => {
             </div>
             <div>合约地址：{quotoTokenData.mint}</div>
             <div>代币名称：{quotoTokenData.name}</div>
-            <div>代币符号：{quotoTokenData.symbol}</div>            
+            <div>代币符号：{quotoTokenData.symbol}</div>
             <div>持币数量：{quotoTokenData.amount / (10 ** quotoTokenData.decimals)}</div>
             <div>市场价格：{quotoTokenData.price0}</div>
             <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={async () => {
