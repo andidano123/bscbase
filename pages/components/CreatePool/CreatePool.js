@@ -237,6 +237,7 @@ const CreatePool = () => {
                     poolInfo.liquidity.toString(),
                     Number(poolInfo.tick)
                 )
+
                 // const swapRoute = new Route(
                 //     [pool],
                 //     token0,
@@ -304,75 +305,23 @@ const CreatePool = () => {
                 // }
 
                 // const txRes = await web3.eth.sendTransaction(transaction);
-
                 const price = priceList[currentTempId];
                 // 0x.org swap api
                 while (true) {
-                    let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
-                    currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
-                    console.log("currentUsdtBalance", currentUsdtBalance);
-                    let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
-                    currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
-                    console.log("currentAddressTokenBalance", currentAddressTokenBalance);
-                    let sellAmount = (currentUsdtBalance - 1) / priceList[currentTempId];
-                    console.log("sellAmount", sellAmount);
-                    if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
-                    if (currentAddressTokenBalance < sellAmount){
-                        sellAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
-                    }
-                    const priceParams = new URLSearchParams({
-                        chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
-                        sellToken: tokenData.mint, //ETH
-                        buyToken: quotoTokenData.mint, //DAI
-                        sellAmount: Math.floor(sellAmount * (10 ** tokenData.decimals)), // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
-                        taker: address, //Address that will make the trade
-                    });
-                    const priceResponse = await fetch('/api/get_swap_tx?' + priceParams.toString());
-                    let res = await priceResponse.json()
-                    // 要进行授权
-                    if (res.price.issues.allowance != null) {
-                        // const Permit2 = new web3.eth.Contract(permit2Abi, res.issues.allowance.spender);
-                        const allowNum3 = await token0Contract.methods.allowance(address, res.price.issues.allowance.spender).call();
-                        if (allowNum3 < 10 ** 30)
-                            await token0Contract.methods.approve(res.price.issues.allowance.spender, MAX_UINT256).send({ from: address });
-                    }
-                    // let signature = await signTypedData(quote.permit2.eip712);
-                    if (res.quote.permit2?.eip712) {
-                        console.log("sss", address, res.quote.permit2.eip712);
-                        const signature = await wallet.provider.request({
-                            method: 'eth_signTypedData_v4',
-                            params: [address, JSON.stringify(res.quote.permit2.eip712)],
-                        });
-
-                        // let signature = await web3.eth.signTypedData(address, res.quote.permit2.eip712)
-                        console.log("sss", signature);
-                        const signatureLengthInHex = numberToHex(size(signature), {
-                            signed: false,
-                            size: 32,
-                        });
-                        res.quote.transaction.data = concat([res.quote.transaction.data, signatureLengthInHex, signature]);
-                    }
-                    const txRes1 = await web3.eth.sendTransaction({
-                        from: address,
-                        gas: res.quote.transaction.gas,
-                        gasPrice: res.quote.transaction.gasPrice,
-                        to: res.quote.transaction.to,
-                        data: res.quote.transaction.data,
-                    });
-                    console.log("交易成功，交易哈希：", txRes1);
-
+                    
+                    await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price);
                     let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
                     currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
-                    currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
+                    let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
                     currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
                     console.log("currentAddressTokenBalance", currentAddressTokenBalance, Math.floor(1000000 / price));
                     if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
-                    currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                    let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                     currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                     console.log("currentTokenBalance, currentUsdtBalance", currentTokenBalance, currentUsdtBalance);
                     // 添加流动池
                     let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
-                    if (addAmount >= currentAddressTokenBalance){
+                    if (addAmount >= currentAddressTokenBalance) {
                         addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
                     }
                     const amount0Increased = fromReadableAmount(
@@ -423,6 +372,7 @@ const CreatePool = () => {
                     const txRes2 = await web3.eth.sendTransaction(transaction);
                     console.log("交易成功，交易哈希：", txRes2);
                 }
+                await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price);
                 setMessage("开仓位成功");
                 setWorking(false);
                 doNext();
@@ -435,9 +385,63 @@ const CreatePool = () => {
         }
         else {
             setMessage(tokenData.mint + "：请选择代币");
-            doNext();            
+            doNext();
         }
     };
+    async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {
+        let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+        currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+        console.log("currentUsdtBalance", currentUsdtBalance);
+        let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
+        currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
+        console.log("currentAddressTokenBalance", currentAddressTokenBalance);
+        let sellAmount = (currentUsdtBalance - 1) / priceList[currentTempId];
+        console.log("sellAmount", sellAmount);
+        if (currentAddressTokenBalance <= Math.floor(1000000 / price)) return;
+        if (currentAddressTokenBalance < sellAmount) {
+            sellAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
+        }
+        const priceParams = new URLSearchParams({
+            chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
+            sellToken: tokenData.mint, //ETH
+            buyToken: quotoTokenData.mint, //DAI
+            sellAmount: Math.floor(sellAmount * (10 ** tokenData.decimals)), // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
+            taker: address, //Address that will make the trade
+        });
+        const priceResponse = await fetch('/api/get_swap_tx?' + priceParams.toString());
+        let res = await priceResponse.json()
+        // 要进行授权
+        if (res.price.issues.allowance != null) {
+            // const Permit2 = new web3.eth.Contract(permit2Abi, res.issues.allowance.spender);
+            const allowNum3 = await token0Contract.methods.allowance(address, res.price.issues.allowance.spender).call();
+            if (allowNum3 < 10 ** 30)
+                await token0Contract.methods.approve(res.price.issues.allowance.spender, MAX_UINT256).send({ from: address });
+        }
+        // let signature = await signTypedData(quote.permit2.eip712);
+        if (res.quote.permit2?.eip712) {
+            console.log("sss", address, res.quote.permit2.eip712);
+            const signature = await wallet.provider.request({
+                method: 'eth_signTypedData_v4',
+                params: [address, JSON.stringify(res.quote.permit2.eip712)],
+            });
+
+            // let signature = await web3.eth.signTypedData(address, res.quote.permit2.eip712)
+            console.log("sss", signature);
+            const signatureLengthInHex = numberToHex(size(signature), {
+                signed: false,
+                size: 32,
+            });
+            res.quote.transaction.data = concat([res.quote.transaction.data, signatureLengthInHex, signature]);
+        }
+        const txRes1 = await web3.eth.sendTransaction({
+            from: address,
+            gas: res.quote.transaction.gas,
+            gasPrice: res.quote.transaction.gasPrice,
+            to: res.quote.transaction.to,
+            data: res.quote.transaction.data,
+        });
+        console.log("交易成功，交易哈希：", txRes1);
+    }
     function fromReadableAmount(
         amount,
         decimals
@@ -674,7 +678,7 @@ const CreatePool = () => {
             }} >一键复制</Button>
             {working && <Spin />}
             <div>日志：{message}</div>
-            {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}            
+            {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={addLiquidity} >加流动池</Button> */}
 
 
