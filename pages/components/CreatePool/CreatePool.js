@@ -516,7 +516,7 @@ const CreatePool = () => {
                     }
                 }
                 console.log("token_id", token_id);
-                if (token_id > 0 && tempList[i].symbol == "ZEN") {
+                if (token_id > 0 && tempList[i].symbol == "BANANAS31") {
                     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
                         headers: {
                             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
