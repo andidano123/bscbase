@@ -15,6 +15,7 @@ import JSBI from 'jsbi'
 const { abi: nfpmAbi } = require("@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json");
 import Quoter from '@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json'
 const qs = require('qs');
+import { concat, numberToHex, size } from 'viem';
 
 import { ethers } from 'ethers';
 import { ERC20_ABI, MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_GAS, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, permit2Abi, POOL_FACTORY_CONTRACT_ADDRESS, QUOTER_CONTRACT_ADDRESS, SWAP_ROUTER_ADDRESS } from '../../../constant';
@@ -71,25 +72,6 @@ const CreatePool = () => {
             alert("操作结束");
         }
     }
-
-
-    const doSwap = async (e) => {
-        try {
-            setMessage("兑换中");
-
-
-
-            setMessage("收尾成功");
-            setWorking(false);
-            doNext();
-            // alert("兑换成功");
-        } catch (e) {
-            console.log(e);
-            setMessage("兑换失败");
-            setWorking(false);
-            doNext();
-        }
-    }
     // 初始价格（必须以 sqrtPriceX96 格式传入）
     function encodeSqrtPriceX96(amount1, amount0) {
         const ratio = amount1 / amount0;
@@ -134,14 +116,14 @@ const CreatePool = () => {
                 doNext();
                 return;
             }
-
+            // 
             setWorking(true);
             try {
                 setMessage("开池子中");
                 let address = wallet.accounts[0].address;
                 const web3 = new Web3(wallet.provider);
                 const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-
+                const usdtValue = 50;
                 // 授权合约可以转移代币
                 const token0Contract = new web3.eth.Contract(ERC20_ABI, tokenData.mint);
                 const token1Contract = new web3.eth.Contract(ERC20_ABI, quotoTokenData.mint);
@@ -202,67 +184,64 @@ const CreatePool = () => {
                 const gasPrice = await web3.eth.getGasPrice();
 
                 // get calldata for minting a position
-                // {
+                {
+                    // 设置流动性数量
+                    const amount0 = tokenData.amount;
+                    const amount1 = usdtValue * (10 ** quotoTokenData.decimals);
 
-                //     // 设置流动性数量
-                //     const amount0 = tokenData.amount;
-                //     const amount1 = 50 * (10 ** quotoTokenData.decimals);
+                    const position = Position.fromAmounts({
+                        pool: configuredPool,
+                        tickLower:
+                            nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
+                            configuredPool.tickSpacing * 2,
+                        tickUpper:
+                            nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) +
+                            configuredPool.tickSpacing * 2,
+                        amount0: amount0,
+                        amount1: amount1,
+                        useFullPrecision: true,
+                    })
+                    const mintOptions = {
+                        recipient: address,
+                        deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+                        slippageTolerance: new Percent(50, 10_000),
+                    }
 
-                //     const position = Position.fromAmounts({
-                //         pool: configuredPool,
-                //         tickLower:
-                //             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
-                //             configuredPool.tickSpacing * 2,
-                //         tickUpper:
-                //             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) +
-                //             configuredPool.tickSpacing * 2,
-                //         amount0: amount0,
-                //         amount1: amount1,
-                //         useFullPrecision: true,
-                //     })
-                //     const mintOptions = {
-                //         recipient: address,
-                //         deadline: Math.floor(Date.now() / 1000) + 60 * 20,
-                //         slippageTolerance: new Percent(50, 10_000),
-                //     }
+                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                        position,
+                        mintOptions
+                    )
+                    console.log("position", position);
+                    console.log("getting amount", position.amount0.toExact(), position.amount1.toExact());
+                    console.log("getting amount1", position.mintAmounts.amount0.toString(), position.mintAmounts.amount1.toString());
+                    const transaction = {
+                        data: calldata,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        value: value,
+                        from: address,
+                        gas: 10000000,
+                        gasPrice,
+                    }
+                    const txRes = await web3.eth.sendTransaction(transaction);
+                    console.log("添加仓位", txRes);
+                }
 
-                //     const { calldata, value } = NonfungiblePositionManager.addCallParameters(
-                //         position,
-                //         mintOptions
-                //     )
-                //     console.log("position", position);
-                //     console.log("getting amount", position.amount0.toExact(), position.amount1.toExact());
-                //     console.log("getting amount1", position.mintAmounts.amount0.toString(), position.mintAmounts.amount1.toString());
-                //     const transaction = {
-                //         data: calldata,
-                //         to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
-                //         value: value,
-                //         from: address,
-                //         gas: 10000000,
-                //         gasPrice,
-                //     }
-                //     const txRes = await web3.eth.sendTransaction(transaction);
-                // }
-
-                const provider = new ethers.providers.Web3Provider(web3.currentProvider);
-
+                // const provider = new ethers.providers.Web3Provider(web3.currentProvider);
                 // swap
-                // const poolInfo = await getPoolInfo()
-                // const pool = new Pool(
-                //     token0,
-                //     token1,
-                //     poolFee,
-                //     poolInfo.sqrtPriceX96.toString(),
-                //     poolInfo.liquidity.toString(),
-                //     Number(poolInfo.tick)
-                // )
-
+                const poolInfo = await getPoolInfo()
+                const pool = new Pool(
+                    token0,
+                    token1,
+                    poolFee,
+                    poolInfo.sqrtPriceX96.toString(),
+                    poolInfo.liquidity.toString(),
+                    Number(poolInfo.tick)
+                )
                 // const swapRoute = new Route(
                 //     [pool],
                 //     token0,
                 //     token1
                 // )
-
                 // const outUSDT = "8";
                 // const inputAmount = (8 / priceList[currentTempId]).toFixed(2);
 
@@ -326,114 +305,137 @@ const CreatePool = () => {
 
                 // const txRes = await web3.eth.sendTransaction(transaction);
 
+                const price = priceList[currentTempId];
                 // 0x.org swap api
-                const priceParams = new URLSearchParams({
-                    chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
-                    sellToken: tokenData.mint, //ETH
-                    buyToken: quotoTokenData.mint, //DAI
-                    sellAmount: 1 * (10 ** tokenData.decimals), // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
-                    taker: address, //Address that will make the trade
-                });
+                while (true) {
+                    let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                    currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+                    console.log("currentUsdtBalance", currentUsdtBalance);
+                    let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
+                    currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
+                    console.log("currentAddressTokenBalance", currentAddressTokenBalance);
+                    let sellAmount = (currentUsdtBalance - 1) / priceList[currentTempId];
+                    console.log("sellAmount", sellAmount);
+                    if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
+                    if (currentAddressTokenBalance < sellAmount){
+                        sellAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
+                    }
+                    const priceParams = new URLSearchParams({
+                        chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
+                        sellToken: tokenData.mint, //ETH
+                        buyToken: quotoTokenData.mint, //DAI
+                        sellAmount: Math.floor(sellAmount * (10 ** tokenData.decimals)), // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
+                        taker: address, //Address that will make the trade
+                    });
+                    const priceResponse = await fetch('/api/get_swap_tx?' + priceParams.toString());
+                    let res = await priceResponse.json()
+                    // 要进行授权
+                    if (res.price.issues.allowance != null) {
+                        // const Permit2 = new web3.eth.Contract(permit2Abi, res.issues.allowance.spender);
+                        const allowNum3 = await token0Contract.methods.allowance(address, res.price.issues.allowance.spender).call();
+                        if (allowNum3 < 10 ** 30)
+                            await token0Contract.methods.approve(res.price.issues.allowance.spender, MAX_UINT256).send({ from: address });
+                    }
+                    // let signature = await signTypedData(quote.permit2.eip712);
+                    if (res.quote.permit2?.eip712) {
+                        console.log("sss", address, res.quote.permit2.eip712);
+                        const signature = await wallet.provider.request({
+                            method: 'eth_signTypedData_v4',
+                            params: [address, JSON.stringify(res.quote.permit2.eip712)],
+                        });
 
-                const headers = {
-                    '0x-api-key': '271880a4-ffca-4c12-a78a-83da2b0db5b0', // Get your live API key from the 0x Dashboard (https://dashboard.0x.org/apps)
-                    '0x-version': 'v2',
-                };
+                        // let signature = await web3.eth.signTypedData(address, res.quote.permit2.eip712)
+                        console.log("sss", signature);
+                        const signatureLengthInHex = numberToHex(size(signature), {
+                            signed: false,
+                            size: 32,
+                        });
+                        res.quote.transaction.data = concat([res.quote.transaction.data, signatureLengthInHex, signature]);
+                    }
+                    const txRes1 = await web3.eth.sendTransaction({
+                        from: address,
+                        gas: res.quote.transaction.gas,
+                        gasPrice: res.quote.transaction.gasPrice,
+                        to: res.quote.transaction.to,
+                        data: res.quote.transaction.data,
+                    });
+                    console.log("交易成功，交易哈希：", txRes1);
 
-                const priceResponse = await fetch('/swap/permit2/price?' + priceParams.toString(), { headers });
-
-                console.log(await priceResponse.json());
-                const res = priceResponse.json();
-
-                // 要进行授权
-                if (res.issues.allowance != null) {
-                    const Permit2 = new web3.eth.Contract(permit2Abi, res.issues.allowance.spender);
-                    const allowNum3 = await token0Contract.methods.allowance(address, res.issues.allowance.spender).call();
-                    if (allowNum3 < 10 ** 30)
-                        await token0Contract.methods.approve(res.issues.allowance.spender, MAX_UINT256).send({ from: address });
+                    let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
+                    currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
+                    currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
+                    currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
+                    console.log("currentAddressTokenBalance", currentAddressTokenBalance, Math.floor(1000000 / price));
+                    if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
+                    currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                    currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+                    console.log("currentTokenBalance, currentUsdtBalance", currentTokenBalance, currentUsdtBalance);
+                    // 添加流动池
+                    let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
+                    if (addAmount >= currentAddressTokenBalance){
+                        addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
+                    }
+                    const amount0Increased = fromReadableAmount(
+                        addAmount,
+                        token0.decimals
+                    )
+                    const positionToIncreaseBy = Position.fromAmount0({
+                        pool,
+                        tickLower:
+                            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
+                            pool.tickSpacing * 2,
+                        tickUpper:
+                            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) +
+                            pool.tickSpacing * 2,
+                        amount0: amount0Increased,
+                        useFullPrecision: true,
+                    })
+                    console.log("positionToIncreaseBy", positionToIncreaseBy, positionToIncreaseBy.amount0.toExact(), positionToIncreaseBy.amount1.toExact(), positionToIncreaseBy.mintAmounts.amount0.toString()
+                        , positionToIncreaseBy.mintAmounts.amount1.toString());
+                    const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
+                    // Get number of positions
+                    const balance = await nfpm.methods.balanceOf(address).call();
+                    // Get all positions
+                    const tokenIds = []
+                    for (let i = 0; i < balance; i++) {
+                        const tokenOfOwnerByIndex =
+                            await nfpm.methods.tokenOfOwnerByIndex(address, i).call();
+                        tokenIds.push(tokenOfOwnerByIndex)
+                    }
+                    console.log("tokenIds", tokenIds);
+                    const addLiquidityOptions = {
+                        deadline: Math.floor(Date.now() / 1000) + 60 * 20,
+                        slippageTolerance: new Percent(50, 10_000),
+                        tokenId: Number(tokenIds[tokenIds.length - 1]),
+                    }
+                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                        positionToIncreaseBy,
+                        addLiquidityOptions
+                    )
+                    const transaction = {
+                        data: calldata,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        value: value,
+                        from: address,
+                        gas: 10000000,
+                        gasPrice,
+                    }
+                    const txRes2 = await web3.eth.sendTransaction(transaction);
+                    console.log("交易成功，交易哈希：", txRes2);
                 }
-
-                // const params = {
-                //     sellToken: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', //WETH
-                //     buyToken: '0x6b175474e89094c44da98b954eedeac495271d0f', //DAI
-                //     sellAmount: '100000000000000000000', // Note that the WETH token uses 18 decimal places, so `sellAmount` is `100 * 10^18`.
-                //     taker: address, //Address that will make the trade
-                //     chainId: '56', // / Ethereum mainnet. See the 0x Cheat Sheet for all supported endpoints: https://0x.org/docs/introduction/0x-cheat-sheet
-                // };
-                const response = await fetch(
-                    `/swap/permit2/quote?` + priceParams.toString(), { headers }
-                );
-
-                console.log(await response.json());
-
-                // let signature = await signTypedData(quote.permit2.eip712);
-
-
-                // 添加流动池
-                // const amount0Increased = fromReadableAmount(
-                //     50000,
-                //     token0.decimals
-                // )
-                // const amount1Increase = fromReadableAmount(
-                //     50000,
-                //     token1.decimals
-                // )
-
-                // const positionToIncreaseBy = Position.fromAmounts({
-                //     pool,
-                //     tickLower:
-                //         nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
-                //         pool.tickSpacing * 2,
-                //     tickUpper:
-                //         nearestUsableTick(pool.tickCurrent, pool.tickSpacing) +
-                //         pool.tickSpacing * 2,
-                //     amount0: amount0Increased,
-                //     amount1: amount1Increase,
-                //     useFullPrecision: true,
-                // })
-                // console.log("positionToIncreaseBy", positionToIncreaseBy, positionToIncreaseBy.amount0.toExact(), positionToIncreaseBy.amount1.toExact(), positionToIncreaseBy.mintAmounts.amount0.toString()
-                //     ,positionToIncreaseBy.mintAmounts.amount1.toString());
-                // const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
-
-                // // Get number of positions
-                // const balance = await nfpm.methods.balanceOf(address).call();
-
-                // // Get all positions
-                // const tokenIds = []
-                // for (let i = 0; i < balance; i++) {
-                //     const tokenOfOwnerByIndex =
-                //         await nfpm.methods.tokenOfOwnerByIndex(address, i).call();
-                //     tokenIds.push(tokenOfOwnerByIndex)
-                // }
-                // console.log("tokenIds", tokenIds);
-                // const addLiquidityOptions = {
-                //     deadline: Math.floor(Date.now() / 1000) + 60 * 20,
-                //     slippageTolerance: new Percent(50, 10_000),
-                //     tokenId: Number(tokenIds[tokenIds.length - 1]),
-                // }
-                // const { calldata, value } = NonfungiblePositionManager.addCallParameters(
-                //     positionToIncreaseBy,
-                //     addLiquidityOptions
-                // )
-                // const transaction = {
-                //     data: calldata,
-                //     to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
-                //     value: value,
-                //     from: address,
-                //     gas: 10000000,
-                //     gasPrice,
-                // }
-                // const txRes = await web3.eth.sendTransaction(transaction);
-
-
-                console.log("交易成功，交易哈希：", txRes);
+                setMessage("开仓位成功");
+                setWorking(false);
+                doNext();
             } catch (err) {
                 console.error("交易失败：", err);
+                setMessage(tokenData.mint + "交易失败：");
+                setWorking(false);
+                doNext();
             }
-
         }
         else {
-            alert("请选择代币");
+            setMessage(tokenData.mint + "：请选择代币");
+            doNext();            
         }
     };
     function fromReadableAmount(
@@ -510,19 +512,19 @@ const CreatePool = () => {
                     }
                 }
                 console.log("token_id", token_id);
-                // if (token_id > 0) {
-                //     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
-                //         headers: {
-                //             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
-                //         },
-                //     }).then((response) => {
-                //         console.log(response.data);
-                //         tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
-                //     }).catch((e) => {
+                if (token_id > 0 && tempList[i].symbol == "ZEN") {
+                    await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
+                        headers: {
+                            'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
+                        },
+                    }).then((response) => {
+                        console.log(response.data);
+                        tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
+                    }).catch((e) => {
 
-                //     });
-                //     await sleep(3000);
-                // }
+                    });
+                    await sleep(3000);
+                }
                 tempPriceList.push(Number(tempList[i].price0));
             } catch (e) {
                 console.log("eee", e);
@@ -670,16 +672,9 @@ const CreatePool = () => {
                 copy(str);
                 alert("复制成功");
             }} >一键复制</Button>
-
-            <div>池子ID：
-                <Input value={poolId} onChange={(e) => {
-                    setPoolId(e.target.value);
-                }} />
-            </div>
             {working && <Spin />}
             <div>日志：{message}</div>
-            {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}
-            <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={doSwap} >补操作</Button>
+            {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}            
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={addLiquidity} >加流动池</Button> */}
 
 
