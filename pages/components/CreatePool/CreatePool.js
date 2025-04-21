@@ -26,7 +26,6 @@ const CreatePool = () => {
     const [working, setWorking] = useState(false);
     const [message, setMessage] = useState('');
     const [tokenWorking, setTokenWorking] = useState(false);
-    const [poolId, setPoolId] = useState("");
     const [templateList, setTemplateList] = useState([]);
     const [currentTempId, setCurrentTempId] = useState(-1);
     const [selectedTemplateList, setSelectedTemplateList] = useState([]);
@@ -48,7 +47,7 @@ const CreatePool = () => {
         getTemplateList();
     }, []);
     useEffect(() => {
-        refreshTokenList();
+        if (templateList.length > 0) refreshTokenList();
     }, [wallet, templateList]);
     const sleep = (time) => {
         return new Promise(resolve => setTimeout(resolve, time))
@@ -286,14 +285,19 @@ const CreatePool = () => {
             tick: slot0[1],
         }
     }
-    async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {
-        let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+    async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {        
+        let currentUsdtBalance = 0;
+        if(currentUsdtBalance != 0){
+            currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+            await sleep(3 * 1000)
+        }
+            
         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
         console.log("currentUsdtBalance", currentUsdtBalance);
         let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
         currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
         console.log("currentAddressTokenBalance", currentAddressTokenBalance);
-        let sellAmount = (currentUsdtBalance - 1) / priceList[currentTempId];
+        let sellAmount = (currentUsdtBalance - 1.5) / priceList[currentTempId];
         console.log("sellAmount", sellAmount);
         if (currentAddressTokenBalance <= Math.floor(1000000 / price)) return;
         if (currentAddressTokenBalance < sellAmount) {
