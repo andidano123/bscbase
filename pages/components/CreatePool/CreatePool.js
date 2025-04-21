@@ -49,7 +49,7 @@ const CreatePool = () => {
     }, []);
     useEffect(() => {
         refreshTokenList();
-    }, [wallet]);
+    }, [wallet, templateList]);
     const sleep = (time) => {
         return new Promise(resolve => setTimeout(resolve, time))
     }
@@ -108,9 +108,21 @@ const CreatePool = () => {
                 const currentTick = priceToClosestTick(new Price(baseAmount.currency, parsedQuoteAmount.currency, baseAmount.quotient, parsedQuoteAmount.quotient))
                 const currentSqrt = TickMath.getSqrtRatioAtTick(currentTick)
                 const configuredPool = new Pool(token0, token1, poolFee, currentSqrt, 0n, currentTick, [])
+
+
+                const chainId = 56;
+                const v3CoreDeployerAddress = chainId && DEPLOYER_ADDRESSES[chainId]
+                const currentPoolAddress = computePoolAddress({
+                    deployerAddress: v3CoreDeployerAddress,
+                    tokenA: token0,
+                    tokenB: token1,
+                    fee: poolFee,
+                    // chainId: ChainId.BNB
+                })
+                const code = await web3.eth.getCode(currentPoolAddress);
                 // 创建池子
-                // if(false)
-                {
+                if (code && code !== '0x') {
+                } else {
                     // const amount0 = tokenData.amount;
                     // const amount1 = usdtValue * (10 ** quotoTokenData.decimals);
                     const amount0 = usdtValue * (10 ** quotoTokenData.decimals);
@@ -157,15 +169,6 @@ const CreatePool = () => {
                     console.log("添加仓位", txRes);
                 }
 
-                const chainId = 56;
-                const v3CoreDeployerAddress = chainId && DEPLOYER_ADDRESSES[chainId]
-                const currentPoolAddress = computePoolAddress({
-                    deployerAddress: v3CoreDeployerAddress,
-                    tokenA: token0,
-                    tokenB: token1,
-                    fee: poolFee,
-                    // chainId: ChainId.BNB
-                })
                 const poolInfo = await getPoolInfo(token0, token1, poolFee, currentPoolAddress)
                 console.log("poolInfo", poolInfo);
                 const pool = new Pool(
@@ -266,9 +269,9 @@ const CreatePool = () => {
             doNext();
         }
     };
-    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {        
+    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {
         const web3 = new Web3(wallet.provider);
-        
+
         console.log("currentPoolAddress", currentPoolAddress);
         const poolContract = new web3.eth.Contract(PANCAKE_tv3PoolStateABI, currentPoolAddress);
 
