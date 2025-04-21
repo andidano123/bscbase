@@ -36,7 +36,7 @@ const CreatePool = () => {
             connecting // boolean indicating if connection is in progress
         },
     ] = useConnectWallet()
-
+    const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
     const getTemplateList = () => {
         axios.get(
             "/api/template_all"
@@ -83,7 +83,7 @@ const CreatePool = () => {
                 setMessage("开池子中");
                 let address = wallet.accounts[0].address;
                 const web3 = new Web3(wallet.provider);
-                const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+                
                 const usdtValue = 50;
                 // 授权合约可以转移代币
                 const token0Contract = new web3.eth.Contract(ERC20_ABI, tokenData.mint);
