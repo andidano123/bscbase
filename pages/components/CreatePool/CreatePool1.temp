@@ -8,13 +8,17 @@ import BN from 'bn.js'
 import Decimal from 'decimal.js'
 import { useConnectWallet } from '@web3-onboard/react';
 import Web3 from 'web3';
+import { ChainId, CurrencyAmount, Percent, SWAP_ROUTER_02_ADDRESSES, Token, TradeType } from '@uniswap/sdk-core'
+import { computePoolAddress, FeeAmount, nearestUsableTick, NonfungiblePositionManager, Pool, Position, Route, SwapQuoter, SwapRouter, TickMath, Trade } from '@uniswap/v3-sdk'
+import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json'
+import JSBI from 'jsbi'
+const { abi: nfpmAbi } = require("@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json");
+import Quoter from '@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json'
 const qs = require('qs');
-import { concat, numberToHex, size, zeroAddress } from 'viem';
-import { ethers } from 'ethers';
-import { ERC20_ABI, PANCAKE_masterChefV3ABI, PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, PANCAKE_tv3PoolStateABI } from '../../../constant';
-import { computePoolAddress, DEPLOYER_ADDRESSES, encodeSqrtRatioX96, FeeAmount, nearestUsableTick, NonfungiblePositionManager, Pool, Position, priceToClosestTick, TickMath } from '@pancakeswap/v3-sdk';
-import { CurrencyAmount, Percent, Price, Token } from '@pancakeswap/swap-sdk-core';
+import { concat, numberToHex, size } from 'viem';
 
+import { ethers } from 'ethers';
+import { ERC20_ABI, MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_GAS, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, permit2Abi, POOL_FACTORY_CONTRACT_ADDRESS, QUOTER_CONTRACT_ADDRESS, SWAP_ROUTER_ADDRESS } from '../../../constant';
 // const URL = "http://localhost";
 const CreatePool = () => {
     const [selectedBase, setSelectedBase] = useState([]);
@@ -68,6 +72,41 @@ const CreatePool = () => {
             alert("操作结束");
         }
     }
+    // 初始价格（必须以 sqrtPriceX96 格式传入）
+    function encodeSqrtPriceX96(amount1, amount0) {
+        const ratio = amount1 / amount0;
+        const sqrt = Math.sqrt(ratio);
+        const sqrtPriceX96 = Math.floor(sqrt * Math.pow(2, 96));
+        console.log("sqrtPriceX96", new Decimal(sqrtPriceX96).toHex());
+        return new Decimal(sqrtPriceX96).toHex();
+    }
+    async function getPoolInfo() {
+        const poolFee = FeeAmount.LOWEST;
+        const web3 = new Web3(wallet.provider);
+        const currentPoolAddress = computePoolAddress({
+            factoryAddress: POOL_FACTORY_CONTRACT_ADDRESS,
+            tokenA: new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals)),
+            tokenB: new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals)),
+            fee: poolFee,
+            chainId: ChainId.BNB
+        })
+        console.log("currentPoolAddress", currentPoolAddress);
+        const poolContract = new web3.eth.Contract(IUniswapV3PoolABI.abi, currentPoolAddress);
+
+        const [fee, liquidity, slot0] =
+            await Promise.all([
+                poolContract.methods.fee().call(),
+                poolContract.methods.liquidity().call(),
+                poolContract.methods.slot0().call(),
+            ])
+        console.log("slot0", slot0);
+        return {
+            fee,
+            liquidity,
+            sqrtPriceX96: slot0[0],
+            tick: slot0[1],
+        }
+    }
 
     const onSubmit = async (e) => {
         console.log("tokenData", tokenData);
@@ -88,33 +127,69 @@ const CreatePool = () => {
                 // 授权合约可以转移代币
                 const token0Contract = new web3.eth.Contract(ERC20_ABI, tokenData.mint);
                 const token1Contract = new web3.eth.Contract(ERC20_ABI, quotoTokenData.mint);
-                const allowNum0 = await token0Contract.methods.allowance(address, PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
+                const allowNum0 = await token0Contract.methods.allowance(address, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
                 if (allowNum0 < 10 ** 30)
-                    await token0Contract.methods.approve(PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
-                const allowNum1 = await token1Contract.methods.allowance(address, PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
+                    await token0Contract.methods.approve(NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
+                const allowNum1 = await token1Contract.methods.allowance(address, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS).call();
                 if (allowNum1 < 10 ** 30)
-                    await token1Contract.methods.approve(PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
+                    await token1Contract.methods.approve(NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS, MAX_UINT256).send({ from: address });
 
-                const tokenA = new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals));
-                const tokenB = new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals));
-                let inverted = !tokenA.sortsBefore(tokenB);
+                const token0 = new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals));
+                const token1 = new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals));
                 const poolFee = FeeAmount.LOW;
+                const currentPoolAddress = computePoolAddress({
+                    factoryAddress: POOL_FACTORY_CONTRACT_ADDRESS,
+                    tokenA: token0,
+                    tokenB: token1,
+                    fee: poolFee,
+                    chainId: ChainId.BNB
+                })
+                console.log("currentPoolAddress", currentPoolAddress);
+                const poolContract = new web3.eth.Contract(IUniswapV3PoolABI.abi, currentPoolAddress);
+                const code = await web3.eth.getCode(currentPoolAddress);
+                if (code && code !== '0x') {
+
+                } else {
+                    // 创建pool
+                    const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
+                    const sqrtPriceX96 = encodeSqrtPriceX96(priceList[currentTempId] * (10 ** quotoTokenData.decimals), 10 ** tokenData.decimals);
+
+                    const tx = nfpm.methods.createAndInitializePoolIfNecessary(tokenData.mint, quotoTokenData.mint, poolFee, web3.utils.hexToNumber(sqrtPriceX96));
+                    const gas = await tx.estimateGas({ from: address });
+                    const gasPrice = await web3.eth.getGasPrice();
+                    await tx.send({
+                        from: address,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        gas,
+                        gasPrice,
+                    });
+                }
+
+                const [liquidity, slot0] =
+                    await Promise.all([
+                        poolContract.methods.liquidity().call(),
+                        poolContract.methods.slot0().call(),
+                    ])
+
+                console.log(TickMath.MIN_TICK, TickMath.MAX_TICK, slot0);
+                const configuredPool = new Pool(
+                    token0,
+                    token1,
+                    poolFee,
+                    slot0.sqrtPriceX96.toString(),
+                    liquidity.toString(),
+                    Number(slot0.tick)
+                )
+                console.log("configuredPool ", configuredPool);
                 const gasPrice = await web3.eth.getGasPrice();
-                const token0 = inverted ? new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals)) : new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals));
-                const token1 = !inverted ? new Token(Number(wallet.chains[0].id), quotoTokenData.mint, Number(quotoTokenData.decimals)) : new Token(Number(wallet.chains[0].id), tokenData.mint, Number(tokenData.decimals));
-                const price = priceList[currentTempId];
-                const baseAmount = inverted ? CurrencyAmount.fromRawAmount(token1, 10 ** token1.decimals) : CurrencyAmount.fromRawAmount(token0, 10 ** token0.decimals);
-                const parsedQuoteAmount = inverted ? CurrencyAmount.fromRawAmount(token0, Math.floor(price * 10 ** token0.decimals)) : CurrencyAmount.fromRawAmount(token1, Math.floor(price * 10 ** token1.decimals));
-                const currentTick = priceToClosestTick(new Price(baseAmount.currency, parsedQuoteAmount.currency, baseAmount.quotient, parsedQuoteAmount.quotient))
-                const currentSqrt = TickMath.getSqrtRatioAtTick(currentTick)
-                const configuredPool = new Pool(token0, token1, poolFee, currentSqrt, 0n, currentTick, [])
-                // 创建池子
-                // if(false)
+
+                // get calldata for minting a position
                 {
-                    // const amount0 = tokenData.amount;
-                    // const amount1 = usdtValue * (10 ** quotoTokenData.decimals);
-                    const amount0 = usdtValue * (10 ** quotoTokenData.decimals);
-                    const position = inverted ? Position.fromAmount0({
+                    // 设置流动性数量
+                    const amount0 = tokenData.amount;
+                    const amount1 = usdtValue * (10 ** quotoTokenData.decimals);
+
+                    const position = Position.fromAmounts({
                         pool: configuredPool,
                         tickLower:
                             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
@@ -123,31 +198,25 @@ const CreatePool = () => {
                             nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) +
                             configuredPool.tickSpacing * 2,
                         amount0: amount0,
-                        // amount1: amount1,
+                        amount1: amount1,
                         useFullPrecision: true,
-                    }) : Position.fromAmount1({
-                        pool: configuredPool,
-                        tickLower:
-                            nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) -
-                            configuredPool.tickSpacing * 2,
-                        tickUpper:
-                            nearestUsableTick(configuredPool.tickCurrent, configuredPool.tickSpacing) +
-                            configuredPool.tickSpacing * 2,
-                        amount1: amount0,
-                        // amount1: amount1,
-                        // useFullPrecision: true,
                     })
-                    console.log("position", position);
-                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(position, {
-                        slippageTolerance: new Percent(50, 10_000),
+                    const mintOptions = {
                         recipient: address,
                         deadline: Math.floor(Date.now() / 1000) + 60 * 20,
-                        useNative: false,
-                        createPool: true,
-                    })
+                        slippageTolerance: new Percent(50, 10_000),
+                    }
+
+                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                        position,
+                        mintOptions
+                    )
+                    console.log("position", position);
+                    console.log("getting amount", position.amount0.toExact(), position.amount1.toExact());
+                    console.log("getting amount1", position.mintAmounts.amount0.toString(), position.mintAmounts.amount1.toString());
                     const transaction = {
                         data: calldata,
-                        to: PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
                         value: value,
                         from: address,
                         gas: 10000000,
@@ -157,17 +226,9 @@ const CreatePool = () => {
                     console.log("添加仓位", txRes);
                 }
 
-                const chainId = 56;
-                const v3CoreDeployerAddress = chainId && DEPLOYER_ADDRESSES[chainId]
-                const currentPoolAddress = computePoolAddress({
-                    deployerAddress: v3CoreDeployerAddress,
-                    tokenA: token0,
-                    tokenB: token1,
-                    fee: poolFee,
-                    // chainId: ChainId.BNB
-                })
-                const poolInfo = await getPoolInfo(token0, token1, poolFee, currentPoolAddress)
-                console.log("poolInfo", poolInfo);
+                // const provider = new ethers.providers.Web3Provider(web3.currentProvider);
+                // swap
+                const poolInfo = await getPoolInfo()
                 const pool = new Pool(
                     token0,
                     token1,
@@ -177,9 +238,77 @@ const CreatePool = () => {
                     Number(poolInfo.tick)
                 )
 
+                // const swapRoute = new Route(
+                //     [pool],
+                //     token0,
+                //     token1
+                // )
+                // const outUSDT = "8";
+                // const inputAmount = (8 / priceList[currentTempId]).toFixed(2);
+
+                // const { calldata } = await SwapQuoter.quoteCallParameters(
+                //     swapRoute,
+                //     CurrencyAmount.fromRawAmount(
+                //         token0,
+                //         ethers.utils.parseUnits(inputAmount, tokenData.decimals)
+                //         // ethers.utils.parseUnits(outUSDT, quotoTokenData.decimals)
+                //     ),
+                //     TradeType.EXACT_INPUT,
+                //     {
+                //         useQuoterV2: true,
+                //     }
+                // );
+                // const quoteCallReturnData = await provider.call({
+                //     to: QUOTER_CONTRACT_ADDRESS,
+                //     data: calldata,
+                // })
+                // const amountOut = ethers.utils.defaultAbiCoder.decode(['uint256'], quoteCallReturnData)
+                // console.log("amountOut", amountOut.toString());
+
+                // const uncheckedTrade = Trade.createUncheckedTrade({
+                //     route: swapRoute,
+                //     inputAmount: CurrencyAmount.fromRawAmount(
+                //         token0,
+                //         ethers.utils.parseUnits(inputAmount, tokenData.decimals)
+                //     ),
+                //     outputAmount: CurrencyAmount.fromRawAmount(
+                //         token1,
+                //         // ethers.utils.parseUnits(outUSDT, quotoTokenData.decimals)
+                //         JSBI.BigInt(amountOut)
+                //     ),
+                //     tradeType: TradeType.EXACT_INPUT,
+                // })
+                // console.log("uncheckedTrade", uncheckedTrade);
+                // console.log(uncheckedTrade.inputAmount.toExact(), uncheckedTrade.outputAmount.toExact());
+                // const options = {
+                //     slippageTolerance: new Percent(50, 10_000), // 50 bips, or 0.50%
+                //     deadline: Math.floor(Date.now() / 1000) + 60 * 20, // 20 minutes from the current Unix time
+                //     recipient: address,
+                // }
+                // const methodParameters = SwapRouter.swapCallParameters([uncheckedTrade], options)
+
+                // // approve to swap route
+                // const allowNum3 = await token0Contract.methods.allowance(address, SWAP_ROUTER_ADDRESS).call();
+                // if (allowNum3 < 10 ** 30)
+                //     await token0Contract.methods.approve(SWAP_ROUTER_ADDRESS, MAX_UINT256).send({ from: address });
+                // const allowNum4 = await token1Contract.methods.allowance(address, SWAP_ROUTER_ADDRESS).call();
+                // if (allowNum4 < 10 ** 30)
+                //     await token1Contract.methods.approve(SWAP_ROUTER_ADDRESS, MAX_UINT256).send({ from: address });
+                // console.log("SWAP_ROUTER_02_ADDRESSES(ChainId.BNB),", SWAP_ROUTER_02_ADDRESSES(ChainId.BNB));
+                // const transaction = {
+                //     data: methodParameters.calldata,
+                //     to: SWAP_ROUTER_ADDRESS,
+                //     value: methodParameters.value,
+                //     from: address,
+                //     gas: 10000000,
+                //     gasPrice,
+                // }
+
+                // const txRes = await web3.eth.sendTransaction(transaction);
+                const price = priceList[currentTempId];
                 // 0x.org swap api
                 while (true) {
-
+                    
                     await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price);
                     let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
                     currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
@@ -191,25 +320,15 @@ const CreatePool = () => {
                     currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                     console.log("currentTokenBalance, currentUsdtBalance", currentTokenBalance, currentUsdtBalance);
                     // 添加流动池
-
                     let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
                     if (addAmount >= currentAddressTokenBalance) {
                         addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
                     }
                     const amount0Increased = fromReadableAmount(
                         addAmount,
-                        tokenData.decimals
+                        token0.decimals
                     )
-                    const positionToIncreaseBy = inverted ? Position.fromAmount1({
-                        pool,
-                        tickLower:
-                            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
-                            pool.tickSpacing * 2,
-                        tickUpper:
-                            nearestUsableTick(pool.tickCurrent, pool.tickSpacing) +
-                            pool.tickSpacing * 2,
-                        amount1: amount0Increased,
-                    }) : Position.fromAmount0({
+                    const positionToIncreaseBy = Position.fromAmount0({
                         pool,
                         tickLower:
                             nearestUsableTick(pool.tickCurrent, pool.tickSpacing) -
@@ -222,7 +341,7 @@ const CreatePool = () => {
                     })
                     console.log("positionToIncreaseBy", positionToIncreaseBy, positionToIncreaseBy.amount0.toExact(), positionToIncreaseBy.amount1.toExact(), positionToIncreaseBy.mintAmounts.amount0.toString()
                         , positionToIncreaseBy.mintAmounts.amount1.toString());
-                    const nfpm = new web3.eth.Contract(PANCAKE_masterChefV3ABI, PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
+                    const nfpm = new web3.eth.Contract(nfpmAbi, NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS);
                     // Get number of positions
                     const balance = await nfpm.methods.balanceOf(address).call();
                     // Get all positions
@@ -233,15 +352,18 @@ const CreatePool = () => {
                         tokenIds.push(tokenOfOwnerByIndex)
                     }
                     console.log("tokenIds", tokenIds);
-                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(positionToIncreaseBy, {
+                    const addLiquidityOptions = {
                         deadline: Math.floor(Date.now() / 1000) + 60 * 20,
                         slippageTolerance: new Percent(50, 10_000),
                         tokenId: Number(tokenIds[tokenIds.length - 1]),
-                        useNative: false,
-                    });
+                    }
+                    const { calldata, value } = NonfungiblePositionManager.addCallParameters(
+                        positionToIncreaseBy,
+                        addLiquidityOptions
+                    )
                     const transaction = {
                         data: calldata,
-                        to: PANCAKE_NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
+                        to: NONFUNGIBLE_POSITION_MANAGER_CONTRACT_ADDRESS,
                         value: value,
                         from: address,
                         gas: 10000000,
@@ -266,23 +388,6 @@ const CreatePool = () => {
             doNext();
         }
     };
-    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {        
-        const web3 = new Web3(wallet.provider);
-        
-        console.log("currentPoolAddress", currentPoolAddress);
-        const poolContract = new web3.eth.Contract(PANCAKE_tv3PoolStateABI, currentPoolAddress);
-
-        const [liquidity, slot0] =
-            await Promise.all([
-                poolContract.methods.liquidity().call(),
-                poolContract.methods.slot0().call(),
-            ])
-        return {
-            liquidity,
-            sqrtPriceX96: slot0[0],
-            tick: slot0[1],
-        }
-    }
     async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {
         let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
