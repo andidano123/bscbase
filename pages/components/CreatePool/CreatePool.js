@@ -287,7 +287,7 @@ const CreatePool = () => {
     }
     async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {        
         let currentUsdtBalance = 0;
-        if(currentUsdtBalance != 0){
+        while(currentUsdtBalance == 0){
             currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
             await sleep(3 * 1000)
         }
