@@ -9,6 +9,7 @@ import PublishToken from './components/PublishToken/PublishToken';
 import Web3 from 'web3';
 import { useConnectWallet, useSetChain } from '@web3-onboard/react'
 import CreatePool from './components/CreatePool/CreatePool';
+import BurnToken from './components/BurnToken/BurnToken';
 
 export default function Home() {
 
@@ -37,7 +38,7 @@ export default function Home() {
     setChain // function to call to initiate user to switch chains in their wallet
   ] = useSetChain()
   /* the connect function uses web3 modal to connect to the user's wallet */
-  
+
   if (wallet) {
     // const onconnect = async () => {
     //   const provider = new ethers.providers.Web3Provider(wallet.provider, 'any')            
@@ -79,14 +80,14 @@ export default function Home() {
   ];
 
   const onClickChain = async ({ key }) => {
-    if (connectedChain){
+    if (connectedChain) {
       if (key == "bsc" && connectedChain.id != "0x38") {
-        setChain({chainId:"0x38"})      
+        setChain({ chainId: "0x38" })
       }
       if (key == "base" && connectedChain.id != "0x2105") {
-        setChain({chainId:"0x2105"})      
+        setChain({ chainId: "0x2105" })
       }
-    } 
+    }
 
   }
   const onClickAddress = ({ key }) => {
@@ -99,7 +100,7 @@ export default function Home() {
         <Dropdown menu={{ items, onClick: onClickChain }}>
           <a onClick={e => e.preventDefault()} style={{ marginRight: "20px", borderRadius: "5px", border: "1px solid blue", padding: "3px 5px", cursor: "pointer" }} >
             <Space>
-              链：{connectedChain?(connectedChain.id == "0x38" ? "BSC" : "Base"):"未连"}
+              链：{connectedChain ? (connectedChain.id == "0x38" ? "BSC" : "Base") : "未连"}
             </Space>
           </a>
         </Dropdown>
@@ -128,6 +129,7 @@ export default function Home() {
           <div className={styles.header}>
             <div className={nav == 0 ? styles.hitem : ''} onClick={() => { clickNav(0) }}>发币</div>
             <div className={nav == 1 ? styles.hitem : ''} onClick={() => { clickNav(1) }}>开池子</div>
+            <div className={nav == 2 ? styles.hitem : ''} onClick={() => { clickNav(2) }}>烧池子</div>
             <div style={{ flex: 1 }}></div>
           </div>
           {
@@ -138,7 +140,10 @@ export default function Home() {
             nav == 1 &&
             <CreatePool></CreatePool>
           }
-
+          {
+            nav == 2 &&
+            <BurnToken></BurnToken>
+          }
         </div>
       </AccountContext.Provider>
     </div>

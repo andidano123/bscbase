@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import styles from './CreatePool.module.css';
+import styles from './BurnToken.module.css';
 import { Button, Form, Spin, Select, Modal, InputNumber, AutoComplete, Input, Divider } from 'antd';
 import copy from 'copy-to-clipboard';
 const fetch = require("node-fetch");
@@ -16,7 +16,7 @@ import { computePoolAddress, DEPLOYER_ADDRESSES, encodeSqrtRatioX96, FeeAmount, 
 import { CurrencyAmount, Percent, Price, Token } from '@pancakeswap/swap-sdk-core';
 
 // const URL = "http://localhost";
-const CreatePool = () => {
+const BurnToken = () => {
     const [selectedBase, setSelectedBase] = useState([]);
     const [currentDoing, setCurrentDoing] = useState(0);
     const [tokenList, setTokenList] = useState([]);
@@ -161,7 +161,7 @@ const CreatePool = () => {
                         recipient: address,
                         deadline: Math.floor(Date.now() / 1000) + 60 * 20,
                         useNative: false,
-                        createPool: true,
+                        BurnToken: true,
                     })
                     const transaction = {
                         data: calldata,
@@ -193,7 +193,7 @@ const CreatePool = () => {
                     while (currentUsdtBalance > usdtValue * 0.1) {
                         currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
-                        await sleep(2 * 1000)
+                        await sleep(1 * 1000)
                         status = status + "*";
                         setStatus(status);
                     }
@@ -304,7 +304,7 @@ const CreatePool = () => {
             }catch(e){
                 console.log("sinboss", e);
             }
-            await sleep(2 * 1000);
+            await sleep(1 * 1000);
         }        
     }
     async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, islast) {
@@ -322,7 +322,7 @@ const CreatePool = () => {
                 currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                 status = status + "*";
                 setStatus(status);
-                await sleep(2 * 1000)
+                await sleep(1 * 1000)
             }
 
         console.log("currentUsdtBalance", currentUsdtBalance);
@@ -452,19 +452,19 @@ const CreatePool = () => {
                     }
                 }
                 console.log("token_id", token_id);
-                if (token_id > 0) {
-                    await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
-                        headers: {
-                            'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
-                        },
-                    }).then((response) => {
-                        console.log(response.data);
-                        tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
-                    }).catch((e) => {
+                // if (token_id > 0) {
+                //     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
+                //         headers: {
+                //             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
+                //         },
+                //     }).then((response) => {
+                //         console.log(response.data);
+                //         tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
+                //     }).catch((e) => {
 
-                    });
-                    await sleep(3000);
-                }
+                //     });
+                //     await sleep(3000);
+                // }
                 tempPriceList.push(Number(tempList[i].price0));
             } catch (e) {
                 console.log("eee", e);
@@ -483,11 +483,11 @@ const CreatePool = () => {
     }
     return (
         <div className={styles.mainpage}>
-            <div style={{ fontWeight: "bold", fontSize: "20px", width: "100%", textAlign: "center" }}>开池子</div>
+            <div style={{ fontWeight: "bold", fontSize: "20px", width: "100%", textAlign: "center" }}>烧池子</div>
             <Divider />
             {/* <input type="file" accept="image/*" onChange={handleFileChange} /> */}
             <div style={{ width: "100%" }}>
-                <div>基础币</div>
+                <div>LP币</div>
                 {tokenWorking && <Spin></Spin>}
                 {!tokenWorking && tokenList && tokenList.length > 0 && <div style={{ width: "100%", textAlign: "center" }} >
                     <div style={{ display: "flex" }}>
@@ -555,32 +555,8 @@ const CreatePool = () => {
 
             {/* <div>市场价格：{tokenData.price}</div> */}
 
-            <div style={{ width: "100%", display: "flex", alignItems: "flex-start", marginBlock: "20px" }}>
-                <div>报价币</div>
-                {/* {tokenWorking && <Spin></Spin>}
-                {!tokenWorking && <Select
-                    style={{ width: "80%", marginLeft: "10px" }}
-                    onChange={handleChangeTemplate1}
-                >
-                    {tokenList && tokenList.length > 0 && tokenList.map((item, indexCrn) => {
-                        if (item?.mint == "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" || item?.mint == "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
-                            return (
-                                <Select.Option key={indexCrn} value={indexCrn}>{item?.name}-{item?.symbol}-{item?.mint}</Select.Option>
-                            )
-                    })}
-                </Select>
-                } */}
-            </div>
-            <div>合约地址：{quotoTokenData.mint}</div>
-            <div>代币名称：{quotoTokenData.name}</div>
-            <div>代币符号：{quotoTokenData.symbol}</div>
-            <div>持币数量：{quotoTokenData.amount / (10 ** quotoTokenData.decimals)}</div>
-            <div>市场价格：{quotoTokenData.price0}</div>
+          
             <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={async () => {
-                if(working == true) {
-                    alert("正在工作中");
-                    return;
-                }
                 if (selectedTemplateList.length == 0) {
                     alert("请先选择基础币");
                     return;
@@ -606,16 +582,8 @@ const CreatePool = () => {
                 currentDoing = -1;
                 setCurrentDoing(currentDoing);
                 doNext();
-            }} >开池子</Button>
+            }} >烧池子</Button>
 
-            <Button style={{ marginLeft: "10px", marginTop: "20px" }} type="primary" onClick={() => {
-                let str = "";
-                for (let i = 0; i < tokenList.length; i++) {
-                    str += tokenList[i].symbol + "\n" + tokenList[i].mint + "\n" + "\n";
-                }
-                copy(str);
-                alert("复制成功");
-            }} >一键复制</Button>
             {working && <Spin />}
             <div style={{ whiteSpace: "pre-wrap" }}>进度：{status}</div>
             <div style={{ whiteSpace: "pre-wrap" }}>日志：{message}</div>
@@ -626,5 +594,5 @@ const CreatePool = () => {
         </div >
     );
 };
-export default CreatePool;
+export default BurnToken;
 // 
