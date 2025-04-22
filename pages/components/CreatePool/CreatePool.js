@@ -173,6 +173,11 @@ const CreatePool = () => {
                     }
                     const txRes = await web3.eth.sendTransaction(transaction);
                     console.log("添加仓位", txRes);
+                    while(true){
+                        const code1 = await web3.eth.getCode(currentPoolAddress);
+                        if (code1 && code1 !== '0x') break;
+                        await sleep(1 * 1000);
+                    }                    
                 }
 
                 const poolInfo = await getPoolInfo(token0, token1, poolFee, currentPoolAddress)
