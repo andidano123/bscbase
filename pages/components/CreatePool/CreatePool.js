@@ -123,10 +123,11 @@ const CreatePool = () => {
                     // chainId: ChainId.BNB
                 })
                 const code = await web3.eth.getCode(currentPoolAddress);
-
+                let resume = true;
                 // 创建池子
                 if (code && code !== '0x') {
                 } else {
+                    resume = false;
                     status = status + "\n开池子并且首次添加流动性";
                     setStatus(status);
                     // const amount0 = tokenData.amount;
@@ -188,7 +189,24 @@ const CreatePool = () => {
 
                 // 0x.org swap api
                 while (true) {
-                    await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
+                    // 如果是已经开好池子
+                    /**
+                     * 查看当前地址的余额，看看小于1000000, 那就直接break， 只需要做取u的操作就行
+                     * 如果大于1000000，那么池子里要取U，但是池子里少于50，那么就不用取u
+                     */
+                    if (resume){
+                        let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
+                        currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
+                        if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
+                        
+                        let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                        currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+                        if (currentUsdtBalance >= usdtValue * 0.9)
+                            await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
+                        resume = false;
+                    }
+                    else 
+                        await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
                     let currentUsdtBalance = 10000000000;
                     while (currentUsdtBalance > usdtValue * 0.1) {
                         currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
@@ -325,9 +343,10 @@ const CreatePool = () => {
                 await sleep(2 * 1000)
             }
 
-        console.log("currentUsdtBalance", currentUsdtBalance);
+        console.log("currentUsdtBalance", currentUsdtBalance);        
         status = status + "池子里U余额：" + currentUsdtBalance;
         setStatus(status);
+        if (currentUsdtBalance <= 1.5) return;
         let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
         currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
         console.log("currentAddressTokenBalance", currentAddressTokenBalance);
