@@ -189,12 +189,15 @@ const CreatePool = () => {
                 // 0x.org swap api
                 while (true) {
                     await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
-                    let currentUsdtBalance = 10000000000;                    
+                    let currentUsdtBalance = 10000000000;
                     while (currentUsdtBalance > usdtValue * 0.1) {
                         currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
-                        await sleep(3 * 1000)
-                    }                                        
+                        await sleep(1 * 1000)
+                        status = status + "*";
+                        setStatus(status);
+                    }
+                    let fastBreak = false
                     let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
                     currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
                     let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
@@ -206,8 +209,9 @@ const CreatePool = () => {
                     let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
                     if (addAmount >= currentAddressTokenBalance) {
                         addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
+                        fastBreak = true;
                     }
-                    status = status + "\n添加流动池，当前余额：" + currentAddressTokenBalance + ", 添加数量："+ addAmount;
+                    status = status + "\n添加流动池，当前余额：" + currentAddressTokenBalance + ", 添加数量：" + addAmount;
                     setStatus(status);
                     const amount0Increased = fromReadableAmount(
                         addAmount,
@@ -262,6 +266,7 @@ const CreatePool = () => {
                     }
                     const txRes2 = await web3.eth.sendTransaction(transaction);
                     console.log("交易成功，交易哈希：", txRes2);
+                    if (fastBreak) break;
                 }
                 await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, true);
                 setMessage("开仓位成功");
@@ -309,7 +314,9 @@ const CreatePool = () => {
             while (currentUsdtBalance < usdtValue * 0.9) {
                 currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                 currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
-                await sleep(3 * 1000)
+                status = status + "*";
+                setStatus(status);
+                await sleep(1 * 1000)
             }
 
         console.log("currentUsdtBalance", currentUsdtBalance);
@@ -600,8 +607,8 @@ const CreatePool = () => {
                 alert("复制成功");
             }} >一键复制</Button>
             {working && <Spin />}
-            <div style={{ whiteSpace:"pre-wrap"}}>进度：{status}</div>
-            <div style={{ whiteSpace:"pre-wrap"}}>日志：{message}</div>
+            <div style={{ whiteSpace: "pre-wrap" }}>进度：{status}</div>
+            <div style={{ whiteSpace: "pre-wrap" }}>日志：{message}</div>
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={addLiquidity} >加流动池</Button> */}
 
