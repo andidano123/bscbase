@@ -25,6 +25,7 @@ const CreatePool = () => {
     const [quotoTokenData, setQuotoTokenData] = useState({});
     const [working, setWorking] = useState(false);
     const [message, setMessage] = useState('');
+    const [status, setStatus] = useState('');
     const [tokenWorking, setTokenWorking] = useState(false);
     const [templateList, setTemplateList] = useState([]);
     const [currentTempId, setCurrentTempId] = useState(-1);
@@ -36,6 +37,7 @@ const CreatePool = () => {
         },
     ] = useConnectWallet()
     const MAX_UINT256 = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+    const usdtValue = 50;
     const getTemplateList = () => {
         axios.get(
             "/api/template_all"
@@ -80,10 +82,12 @@ const CreatePool = () => {
             setWorking(true);
             try {
                 setMessage("开池子中");
+                status = "开始";
+                setStatus(status);
                 let address = wallet.accounts[0].address;
                 const web3 = new Web3(wallet.provider);
-                
-                const usdtValue = 50;
+
+
                 // 授权合约可以转移代币
                 const token0Contract = new web3.eth.Contract(ERC20_ABI, tokenData.mint);
                 const token1Contract = new web3.eth.Contract(ERC20_ABI, quotoTokenData.mint);
@@ -119,9 +123,12 @@ const CreatePool = () => {
                     // chainId: ChainId.BNB
                 })
                 const code = await web3.eth.getCode(currentPoolAddress);
+
                 // 创建池子
                 if (code && code !== '0x') {
                 } else {
+                    status = status + "\n开池子并且首次添加流动性";
+                    setStatus(status);
                     // const amount0 = tokenData.amount;
                     // const amount1 = usdtValue * (10 ** quotoTokenData.decimals);
                     const amount0 = usdtValue * (10 ** quotoTokenData.decimals);
@@ -181,8 +188,7 @@ const CreatePool = () => {
 
                 // 0x.org swap api
                 while (true) {
-
-                    await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price);
+                    await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
                     let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
                     currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
                     let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
@@ -192,12 +198,13 @@ const CreatePool = () => {
                     let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                     currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                     console.log("currentTokenBalance, currentUsdtBalance", currentTokenBalance, currentUsdtBalance);
-                    // 添加流动池
-
+                    // 添加流动池                    
                     let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
                     if (addAmount >= currentAddressTokenBalance) {
                         addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
                     }
+                    status = status + "\n添加流动池，当前余额：" + currentAddressTokenBalance + ", 添加数量：", addAmount;
+                    setStatus(status);
                     const amount0Increased = fromReadableAmount(
                         addAmount,
                         tokenData.decimals
@@ -252,7 +259,7 @@ const CreatePool = () => {
                     const txRes2 = await web3.eth.sendTransaction(transaction);
                     console.log("交易成功，交易哈希：", txRes2);
                 }
-                await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price);
+                await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, true);
                 setMessage("开仓位成功");
                 setWorking(false);
                 doNext();
@@ -285,15 +292,25 @@ const CreatePool = () => {
             tick: slot0[1],
         }
     }
-    async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price) {        
+    async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, islast) {
+        if (islast)
+            status = status + "\n最后取U";
+        else
+            status = status + "\n取U";
+        setStatus(status);
         let currentUsdtBalance = 0;
-        while(currentUsdtBalance == 0){
-            currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
-            await sleep(3 * 1000)
-        }
-            
+        if (islast)
+            await sleep(5 * 1000);
+        else
+            while (currentUsdtBalance < usdtValue * 0.9) {
+                currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                await sleep(3 * 1000)
+            }
+
         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
         console.log("currentUsdtBalance", currentUsdtBalance);
+        status = status + "池子里U余额：" + currentUsdtBalance;
+        setStatus(status);
         let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
         currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
         console.log("currentAddressTokenBalance", currentAddressTokenBalance);
@@ -579,6 +596,7 @@ const CreatePool = () => {
                 alert("复制成功");
             }} >一键复制</Button>
             {working && <Spin />}
+            <div>进度：{status}</div>
             <div>日志：{message}</div>
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={addLiquidity} >加流动池</Button> */}
