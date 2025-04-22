@@ -304,10 +304,10 @@ const CreatePool = () => {
         else
             while (currentUsdtBalance < usdtValue * 0.9) {
                 currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                 await sleep(3 * 1000)
             }
 
-        currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
         console.log("currentUsdtBalance", currentUsdtBalance);
         status = status + "池子里U余额：" + currentUsdtBalance;
         setStatus(status);
