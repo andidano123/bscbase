@@ -332,8 +332,16 @@ const CreatePool = () => {
             status = status + "\n取U";
         setStatus(status);
         let currentUsdtBalance = 0;
-        if (islast)
+        if (islast){
             await sleep(5 * 1000);
+            while (currentUsdtBalance == 0) {
+                currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+                status = status + "*";
+                setStatus(status);
+                await sleep(2 * 1000)
+            }
+        }            
         else
             while (currentUsdtBalance < usdtValue * 0.9) {
                 currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
