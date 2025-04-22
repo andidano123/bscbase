@@ -203,7 +203,7 @@ const CreatePool = () => {
                     if (addAmount >= currentAddressTokenBalance) {
                         addAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
                     }
-                    status = status + "\n添加流动池，当前余额：" + currentAddressTokenBalance + ", 添加数量：", addAmount;
+                    status = status + "\n添加流动池，当前余额：" + currentAddressTokenBalance + ", 添加数量："+ addAmount;
                     setStatus(status);
                     const amount0Increased = fromReadableAmount(
                         addAmount,
