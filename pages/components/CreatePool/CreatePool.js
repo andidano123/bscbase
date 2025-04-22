@@ -189,14 +189,18 @@ const CreatePool = () => {
                 // 0x.org swap api
                 while (true) {
                     await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
+                    let currentUsdtBalance = 10000000000;                    
+                    while (currentUsdtBalance > usdtValue * 0.1) {
+                        currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
+                        currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
+                        await sleep(3 * 1000)
+                    }                                        
                     let currentTokenBalance = await token0Contract.methods.balanceOf(currentPoolAddress).call();
                     currentTokenBalance = Number(currentTokenBalance) / 10 ** tokenData.decimals;
                     let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
                     currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
                     console.log("currentAddressTokenBalance", currentAddressTokenBalance, Math.floor(1000000 / price));
                     if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
-                    let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
-                    currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
                     console.log("currentTokenBalance, currentUsdtBalance", currentTokenBalance, currentUsdtBalance);
                     // 添加流动池                    
                     let addAmount = Math.floor(usdtValue * currentTokenBalance / currentUsdtBalance)
