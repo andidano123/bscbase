@@ -197,7 +197,8 @@ const CreatePool = () => {
                     if (resume){
                         let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
                         currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
-                        if (currentAddressTokenBalance <= Math.floor(1000000 / price)) break;
+                        console.log("check go on", currentAddressTokenBalance, Math.floor(1000000 / price));
+                        if (currentAddressTokenBalance <= Math.floor(1500000 / price)) break;
                         
                         let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
@@ -360,7 +361,7 @@ const CreatePool = () => {
         console.log("currentAddressTokenBalance", currentAddressTokenBalance);
         let sellAmount = (currentUsdtBalance - 1.5) / priceList[currentTempId];
         console.log("sellAmount", sellAmount);
-        if (currentAddressTokenBalance <= Math.floor(1000000 / price)) return;
+        if (!islast && currentAddressTokenBalance <= Math.floor(1000000 / price)) return;
         if (currentAddressTokenBalance < sellAmount) {
             sellAmount = currentAddressTokenBalance - Math.floor(1000000 / price);
         }
@@ -479,19 +480,19 @@ const CreatePool = () => {
                     }
                 }
                 console.log("token_id", token_id);
-                if (token_id > 0) {
-                    await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
-                        headers: {
-                            'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
-                        },
-                    }).then((response) => {
-                        console.log(response.data);
-                        tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
-                    }).catch((e) => {
+                // if (token_id > 0) {
+                //     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
+                //         headers: {
+                //             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
+                //         },
+                //     }).then((response) => {
+                //         console.log(response.data);
+                //         tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
+                //     }).catch((e) => {
 
-                    });
-                    await sleep(3000);
-                }
+                //     });
+                //     await sleep(3000);
+                // }
                 tempPriceList.push(Number(tempList[i].price0));
             } catch (e) {
                 console.log("eee", e);
