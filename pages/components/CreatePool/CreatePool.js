@@ -596,8 +596,8 @@ const CreatePool = () => {
                 alert("复制成功");
             }} >一键复制</Button>
             {working && <Spin />}
-            <div>进度：{status}</div>
-            <div>日志：{message}</div>
+            <div style={{ whiteSpace:"pre-wrap"}}>进度：{status}</div>
+            <div style={{ whiteSpace:"pre-wrap"}}>日志：{message}</div>
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={openPosition} >单个存币</Button> */}
             {/* <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={addLiquidity} >加流动池</Button> */}
 
