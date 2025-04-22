@@ -172,12 +172,7 @@ const CreatePool = () => {
                         gasPrice,
                     }
                     const txRes = await web3.eth.sendTransaction(transaction);
-                    console.log("添加仓位", txRes);
-                    while(true){
-                        const code1 = await web3.eth.getCode(currentPoolAddress);
-                        if (code1 && code1 !== '0x') break;
-                        await sleep(1 * 1000);
-                    }                    
+                    console.log("添加仓位", txRes);                    
                 }
 
                 const poolInfo = await getPoolInfo(token0, token1, poolFee, currentPoolAddress)
@@ -289,22 +284,28 @@ const CreatePool = () => {
             doNext();
         }
     };
-    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {
+    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {        
         const web3 = new Web3(wallet.provider);
-
         console.log("currentPoolAddress", currentPoolAddress);
-        const poolContract = new web3.eth.Contract(PANCAKE_tv3PoolStateABI, currentPoolAddress);
+        while(true){
+            try{
+                const poolContract = new web3.eth.Contract(PANCAKE_tv3PoolStateABI, currentPoolAddress);
 
-        const [liquidity, slot0] =
-            await Promise.all([
-                poolContract.methods.liquidity().call(),
-                poolContract.methods.slot0().call(),
-            ])
-        return {
-            liquidity,
-            sqrtPriceX96: slot0[0],
-            tick: slot0[1],
-        }
+                const [liquidity, slot0] =
+                    await Promise.all([
+                        poolContract.methods.liquidity().call(),
+                        poolContract.methods.slot0().call(),
+                    ])
+                return {
+                    liquidity,
+                    sqrtPriceX96: slot0[0],
+                    tick: slot0[1],
+                }
+            }catch(e){
+                console.log("sinboss", e);
+            }
+            await sleep(1 * 1000);
+        }        
     }
     async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, islast) {
         if (islast)
