@@ -108,19 +108,19 @@ const PublishToken = () => {
 
             const web3 = new Web3(wallet.provider);
             const myContract = new web3.eth.Contract(abi);
-            const args = web3.eth.abi.encodeParameters(
-                [
-                    'string',
-                    'string',
-                    'uint8',
-                    'uint256',
-                    'address'
-                ],
-                [tokenInfo.name, tokenInfo.symbol, tokenInfo.decimals, tokenInfo.supplies, wallet.accounts[0].address]
-            );
+            // const args = web3.eth.abi.encodeParameters(
+            //     [
+            //         'string',
+            //         'string',
+            //         'uint8',
+            //         'uint256',
+            //         'address'
+            //     ],
+            //     [tokenInfo.name, tokenInfo.symbol, tokenInfo.decimals, tokenInfo.supplies, wallet.accounts[0].address]
+            // );
             const contractDeployer = myContract.deploy({
                 data: bytecode,
-                arguments: [tokenInfo.name, tokenInfo.symbol, tokenInfo.decimals, tokenInfo.supplies, wallet.accounts[0].address],
+                arguments: [tokenInfo.name, tokenInfo.symbol, tokenInfo.decimals, tokenInfo.supplies > 9000000000000 ? 9000000000000 : tokenInfo.supplies, wallet.accounts[0].address],
             });
             const gas = await contractDeployer.estimateGas({
                 from: wallet.accounts[0].address,
@@ -262,7 +262,7 @@ const PublishToken = () => {
                             const supply = Math.floor(response.data.data[tokenID].max_supply ? response.data.data[tokenID].max_supply : response.data.data[tokenID].circulating_supply);
                             form.setFieldsValue(
                                 {
-                                    supplies: supply,
+                                    supplies: supply > 9000000000000 ? 9000000000000 : supply,
                                     decimals: supply > 1000000000 ? 6 : 8
 
                                 }
@@ -438,7 +438,16 @@ const PublishToken = () => {
                     label="供应"
                     rules={[{ required: true, message: '请输入供应量' }]}
                 >
-                    <InputNumber style={{ width: '100%' }} placeholder="请输入供应量" />
+                    <InputNumber style={{ width: '100%' }} placeholder="请输入供应量" onChange={(e) => {
+                        if (e > 9000000000000) {
+                            form.setFieldsValue(
+                                {
+                                    supplies: 9000000000000,
+                                    decimals: 6
+                                }
+                            );
+                        }
+                    }} />
                 </Form.Item>
                 <Form.Item>
                     <Button type="primary" htmlType="submit" >发布代币</Button>

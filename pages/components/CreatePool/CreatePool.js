@@ -26,6 +26,7 @@ const CreatePool = () => {
     const [working, setWorking] = useState(false);
     const [message, setMessage] = useState('');
     const [status, setStatus] = useState('');
+    const [showShort, setShowShort] = useState(true);
     const [tokenWorking, setTokenWorking] = useState(false);
     const [templateList, setTemplateList] = useState([]);
     const [currentTempId, setCurrentTempId] = useState(-1);
@@ -53,6 +54,9 @@ const CreatePool = () => {
     }, [wallet, templateList]);
     const sleep = (time) => {
         return new Promise(resolve => setTimeout(resolve, time))
+    }
+    const makeshort = (addr) => {
+        return addr.substr(0, 5) + "..." + addr.substr(addr.length - 4);
     }
     const doNext = async () => {
         console.log("selected index", currentDoing, selectedBase.length);
@@ -173,7 +177,7 @@ const CreatePool = () => {
                         gasPrice,
                     }
                     const txRes = await web3.eth.sendTransaction(transaction);
-                    console.log("添加仓位", txRes);                    
+                    console.log("添加仓位", txRes);
                 }
 
                 const poolInfo = await getPoolInfo(token0, token1, poolFee, currentPoolAddress)
@@ -194,19 +198,19 @@ const CreatePool = () => {
                      * 查看当前地址的余额，看看小于1000000, 那就直接break， 只需要做取u的操作就行
                      * 如果大于1000000，那么池子里要取U，但是池子里少于50，那么就不用取u
                      */
-                    if (resume){
+                    if (resume) {
                         let currentAddressTokenBalance = await token0Contract.methods.balanceOf(address).call();
                         currentAddressTokenBalance = Number(currentAddressTokenBalance) / 10 ** tokenData.decimals;
                         console.log("check go on", currentAddressTokenBalance, Math.floor(1000000 / price));
                         if (currentAddressTokenBalance <= Math.floor(1500000 / price)) break;
-                        
+
                         let currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
                         currentUsdtBalance = Number(currentUsdtBalance) / 10 ** quotoTokenData.decimals;
-                        if (currentUsdtBalance >= usdtValue * 0.9)
-                            await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
+                        // if (currentUsdtBalance >= usdtValue * 0.9)
+                        await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, true);
                         resume = false;
                     }
-                    else 
+                    else
                         await swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, false);
                     let currentUsdtBalance = 10000000000;
                     while (currentUsdtBalance > usdtValue * 0.1) {
@@ -303,11 +307,11 @@ const CreatePool = () => {
             doNext();
         }
     };
-    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {        
+    async function getPoolInfo(token0, token1, poolFee, currentPoolAddress) {
         const web3 = new Web3(wallet.provider);
         console.log("currentPoolAddress", currentPoolAddress);
-        while(true){
-            try{
+        while (true) {
+            try {
                 const poolContract = new web3.eth.Contract(PANCAKE_tv3PoolStateABI, currentPoolAddress);
 
                 const [liquidity, slot0] =
@@ -320,11 +324,11 @@ const CreatePool = () => {
                     sqrtPriceX96: slot0[0],
                     tick: slot0[1],
                 }
-            }catch(e){
+            } catch (e) {
                 console.log("sinboss", e);
             }
             await sleep(2 * 1000);
-        }        
+        }
     }
     async function swapOutAllUSDT(web3, token0Contract, token1Contract, currentPoolAddress, address, price, islast) {
         if (islast)
@@ -333,7 +337,7 @@ const CreatePool = () => {
             status = status + "\n取U";
         setStatus(status);
         let currentUsdtBalance = 0;
-        if (islast){
+        if (islast) {
             await sleep(5 * 1000);
             while (currentUsdtBalance == 0) {
                 currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
@@ -342,7 +346,7 @@ const CreatePool = () => {
                 setStatus(status);
                 await sleep(2 * 1000)
             }
-        }            
+        }
         else
             while (currentUsdtBalance < usdtValue * 0.9) {
                 currentUsdtBalance = await token1Contract.methods.balanceOf(currentPoolAddress).call();
@@ -352,7 +356,7 @@ const CreatePool = () => {
                 await sleep(2 * 1000)
             }
 
-        console.log("currentUsdtBalance", currentUsdtBalance);        
+        console.log("currentUsdtBalance", currentUsdtBalance);
         status = status + "池子里U余额：" + currentUsdtBalance;
         setStatus(status);
         if (currentUsdtBalance <= 1.5) return;
@@ -480,19 +484,19 @@ const CreatePool = () => {
                     }
                 }
                 console.log("token_id", token_id);
-                if (token_id > 0) {
-                    await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
-                        headers: {
-                            'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
-                        },
-                    }).then((response) => {
-                        console.log(response.data);
-                        tempList[i].price0 = response.data.data[token_id].quote?.USD?.price;
-                    }).catch((e) => {
+                // if (token_id > 0) {
+                //     await axios.get('/v2/cryptocurrency/quotes/latest?id=' + token_id, {
+                //         headers: {
+                //             'X-CMC_PRO_API_KEY': '1a40082b-7b15-4c78-8b14-a972d3c47df9',
+                //         },
+                //     }).then((response) => {
+                //         console.log(response.data);
+                //         tempList[i].price0 = Number(response.data.data[token_id].quote?.USD?.price).toFixed(8);
+                //     }).catch((e) => {
 
-                    });
-                    await sleep(3000);
-                }
+                //     });
+                //     await sleep(3000);
+                // }
                 tempPriceList.push(Number(tempList[i].price0));
             } catch (e) {
                 console.log("eee", e);
@@ -521,7 +525,9 @@ const CreatePool = () => {
                     <div style={{ display: "flex" }}>
                         <div style={{ width: "10%" }}>币种</div>
                         <div style={{ width: "10%" }}>余额</div>
-                        <div style={{ width: "30%" }}>合约</div>
+                        <div style={{ width: "30%" }}>合约<Button type="primary" onClick={async () => { 
+                            setShowShort(!showShort);
+                        }}>显示/隐藏</Button></div>
                         <div style={{ width: "10%" }}>价格</div>
                         <div style={{ width: "20%" }}>预留数量预估</div>
                         <div style={{ width: "20%" }}>修改价格</div>
@@ -549,7 +555,7 @@ const CreatePool = () => {
                                     </div>
                                 </div>
                                 <div style={{ width: "10%" }}>{(item.amount / (10 ** item.decimals)).toFixed(2)}</div>
-                                <div style={{ width: "30%" }}>{item.mint}</div>
+                                <div style={{ width: "30%" }}>{showShort?makeshort(item.mint):item.mint}</div>
                                 <div style={{ width: "10%" }}>{item.price0}</div>
                                 <div style={{ width: "20%" }}>{priceList[indexCrn] == 0 ? "未知" : (1000000 / priceList[indexCrn]).toFixed(2)}</div>
                                 <div style={{ width: "20%" }}><Input style={{ width: "200px" }} value={priceList[indexCrn]} onChange={(e) => {
@@ -605,7 +611,7 @@ const CreatePool = () => {
             <div>持币数量：{quotoTokenData.amount / (10 ** quotoTokenData.decimals)}</div>
             <div>市场价格：{quotoTokenData.price0}</div>
             <Button style={{ marginTop: "20px" }} type="primary" htmlType="submit" onClick={async () => {
-                if(working == true) {
+                if (working == true) {
                     alert("正在工作中");
                     return;
                 }
