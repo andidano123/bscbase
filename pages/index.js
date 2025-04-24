@@ -129,7 +129,7 @@ export default function Home() {
           <div className={styles.header}>
             <div className={nav == 0 ? styles.hitem : ''} onClick={() => { clickNav(0) }}>发币</div>
             <div className={nav == 1 ? styles.hitem : ''} onClick={() => { clickNav(1) }}>开池子</div>
-            <div className={nav == 2 ? styles.hitem : ''} onClick={() => { clickNav(2) }}>烧池子</div>
+            {/* <div className={nav == 2 ? styles.hitem : ''} onClick={() => { clickNav(2) }}>烧池子</div> */}
             <div style={{ flex: 1 }}></div>
           </div>
           {
@@ -140,10 +140,10 @@ export default function Home() {
             nav == 1 &&
             <CreatePool></CreatePool>
           }
-          {
+          {/* {
             nav == 2 &&
             <BurnToken></BurnToken>
-          }
+          } */}
         </div>
       </AccountContext.Provider>
     </div>
